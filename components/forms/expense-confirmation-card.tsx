@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Check, LoaderCircle, Sparkles } from "lucide-react";
+import { AlertTriangle, Check, Headphones, LoaderCircle, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { calculateEqualExpenseSplit } from "@/lib/ledger";
@@ -35,6 +35,8 @@ type ExpenseConfirmationCardProps = {
   draft: ExpenseDraft;
   duplicateWarning?: ExpenseDuplicateWarning | null;
   averageExpenseAmountPaise?: number | null;
+  source?: "text" | "voice";
+  heardTranscript?: string | null;
   onConfirmed: () => void;
 };
 
@@ -45,6 +47,8 @@ export function ExpenseConfirmationCard({
   draft,
   duplicateWarning = null,
   averageExpenseAmountPaise = null,
+  source = "text",
+  heardTranscript = null,
   onConfirmed,
 }: ExpenseConfirmationCardProps) {
   const router = useRouter();
@@ -120,7 +124,7 @@ export function ExpenseConfirmationCard({
             description: description.trim(),
             split_type: "equal",
             participant_ids: normalizedParticipantIds,
-            source: "text",
+            source,
             large_expense_acknowledged: acknowledgedLargeAmount,
           }),
         });
@@ -149,6 +153,15 @@ export function ExpenseConfirmationCard({
         </div>
         <Sparkles className="mt-1 size-5 text-[color:var(--accent)]" aria-hidden="true" />
       </div>
+
+      {source === "voice" && heardTranscript ? (
+        <div className="mt-5 rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] px-4 py-3 text-sm leading-6 text-[color:var(--muted)]">
+          <div className="flex items-start gap-2">
+            <Headphones className="mt-0.5 size-4 shrink-0 text-[color:var(--accent)]" aria-hidden="true" />
+            <p><span className="font-semibold text-[color:var(--foreground)]">Heard:</span> {heardTranscript}</p>
+          </div>
+        </div>
+      ) : null}
 
       {duplicateWarning ? (
         <div className="mt-5 rounded-2xl border border-[color:var(--accent-soft)] bg-[color:var(--paper)] px-4 py-3 text-sm leading-6 text-[color:var(--ink-soft)]">

@@ -21,7 +21,9 @@ tests/                Automated ledger and application tests
 
 - `app/(app)/groups/`: groups, outings, expenses, balances, and settlement screens.
 - `app/api/`: authenticated server routes for groups, outings, expenses, settlements, and webhooks.
+- `app/api/subgroups/[subgroupId]/expenses/transcribe/`: server-only push-to-talk audio transcription; the returned text goes through the normal expense parser.
 - `components/forms/`: interactive forms and actions used throughout the app.
+- `components/forms/expense-entry-form.tsx`: typed and push-to-talk expense capture with the shared confirmation flow.
 - `lib/ledger.ts`: client-side ledger and net-settlement calculations used by tests and UI logic.
 - `lib/supabase/`: browser, server, admin, and session-refresh Supabase clients.
 - `lib/prava.ts`: server-side Prava session creation, result polling, credential extraction, and status reporting.

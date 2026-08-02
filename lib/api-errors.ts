@@ -12,7 +12,11 @@ export type ApiErrorCode =
   | "EXPENSE_INVALID_AMOUNT"
   | "EXPENSE_NOT_PAYER"
   | "EXPENSE_LOCKED"
-  | "REMINDER_RATE_LIMITED";
+  | "REMINDER_RATE_LIMITED"
+  | "PROVIDER_NOT_CONFIGURED"
+  | "TRANSCRIPTION_FAILED"
+  | "TRANSCRIPTION_EMPTY"
+  | "TRANSCRIPTION_TOO_LONG";
 
 export function apiError(code: ApiErrorCode, message: string, status: number) {
   return NextResponse.json(
