@@ -13,7 +13,7 @@ export default async function JoinPage({ params }: { params: Promise<{ code: str
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect(`/login?next=/join/${code}`);
+    redirect(`/login?next=/join/${encodeURIComponent(code)}`);
   }
 
   return <JoinInviteFlow code={code} />;

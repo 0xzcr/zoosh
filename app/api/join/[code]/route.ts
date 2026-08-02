@@ -3,8 +3,30 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+function normalizeInviteCode(input: string) {
+  let decoded = input;
+  try {
+    decoded = decodeURIComponent(input);
+  } catch {
+    // Keep the original value when the route segment is malformed.
+  }
+
+  try {
+    const url = new URL(decoded);
+    const match = url.pathname.match(/\/join\/([^/]+)\/?$/i);
+    if (match?.[1]) {
+      decoded = match[1];
+    }
+  } catch {
+    // The value is already a code.
+  }
+
+  return decoded.trim().replace(/\s+/g, "").toLowerCase();
+}
+
 export async function POST(_request: Request, { params }: { params: Promise<{ code: string }> }) {
-  const { code } = await params;
+  const { code: rawCode } = await params;
+  const code = normalizeInviteCode(rawCode);
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -12,6 +34,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ co
 
   if (!user) {
     return NextResponse.json({ error: { code: "UNAUTHORIZED", message: "Sign in to join an invite." } }, { status: 401 });
+  }
+
+  if (!code) {
+    return NextResponse.json({ error: { code: "INVITE_NOT_FOUND", message: "Enter a valid invite code." } }, { status: 404 });
   }
 
   const admin = createSupabaseAdminClient() as any;

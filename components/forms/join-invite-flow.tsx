@@ -32,7 +32,7 @@ export function JoinInviteFlow({ code }: JoinInviteFlowProps) {
     startTransition(() => {
       void (async () => {
         setStatus("joining");
-        const response = await fetch(`/api/join/${code}`, { method: "POST" });
+        const response = await fetch(`/api/join/${encodeURIComponent(code)}`, { method: "POST" });
         const payload: unknown = await response.json().catch(() => null);
 
         if (!response.ok) {
@@ -48,7 +48,11 @@ export function JoinInviteFlow({ code }: JoinInviteFlowProps) {
         setGroupId(data.invite?.friend_group_id ?? null);
         setMessage(data.alreadyJoined ? "You were already in this group." : "You joined the group.");
         setStatus("joined");
-        router.refresh();
+        if (data.invite?.friend_group_id) {
+          router.replace(`/groups/${data.invite.friend_group_id}`);
+        } else {
+          router.refresh();
+        }
       })();
     });
   }, [code, router, status]);

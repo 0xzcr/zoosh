@@ -6,6 +6,22 @@ import { ArrowRight, UserPlus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
+function normalizeInviteInput(input: string) {
+  const trimmed = input.trim();
+
+  try {
+    const url = new URL(trimmed);
+    const match = url.pathname.match(/\/join\/([^/]+)\/?$/i);
+    if (match?.[1]) {
+      return decodeURIComponent(match[1]).replace(/\s+/g, "").toLowerCase();
+    }
+  } catch {
+    // The input is a code rather than a full invite URL.
+  }
+
+  return trimmed.replace(/\s+/g, "").toLowerCase();
+}
+
 export function JoinCodeForm() {
   const router = useRouter();
   const [code, setCode] = useState("");
@@ -13,7 +29,7 @@ export function JoinCodeForm() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const trimmedCode = code.trim();
+    const trimmedCode = normalizeInviteInput(code);
 
     if (!trimmedCode) {
       setError("Enter the invite code first.");
