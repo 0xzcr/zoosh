@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { LoaderCircle, ShieldCheck } from "lucide-react";
 import { PravaSDK } from "@prava-sdk/core";
 
 type PravaPaymentProps = {
   sessionId: string;
+  returnPath: string;
 };
 
 type SessionPayload = {
@@ -29,15 +31,25 @@ function formatPravaError(error: unknown) {
   return code ? `${message} (${code})` : message;
 }
 
-export function PravaPayment({ sessionId }: PravaPaymentProps) {
+export function PravaPayment({ sessionId, returnPath }: PravaPaymentProps) {
+  const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
   const sdkRef = useRef<PravaSDK | null>(null);
+  const finalizationStartedRef = useRef(false);
   const [status, setStatus] = useState<"loading" | "ready" | "checking" | "authorized" | "requires_action" | "declined" | "error">("loading");
   const [message, setMessage] = useState("Preparing your secure approval form...");
   const [actionUrl, setActionUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    let pollTimer: number | undefined;
+    let pollInFlight = false;
+    let transientErrors = 0;
+
+    function stopPolling() {
+      if (pollTimer !== undefined) window.clearInterval(pollTimer);
+      pollTimer = undefined;
+    }
 
     async function start() {
       const response = await fetch(`/api/settlements/${sessionId}/prava-session`, { method: "POST" });
@@ -64,7 +76,7 @@ export function PravaPayment({ sessionId }: PravaPaymentProps) {
           if (cancelled) return;
           setStatus("checking");
           setMessage("Approval received. Confirming the payment result...");
-          void checkResult();
+          void checkResultOnce();
         },
         onError: (error) => {
           if (!cancelled) {
@@ -73,12 +85,14 @@ export function PravaPayment({ sessionId }: PravaPaymentProps) {
             void fetch(`/api/settlements/${sessionId}/prava-session?restart=1`, { method: "POST" }).catch(() => {
               // The visible provider error remains the useful feedback if a retry reset fails.
             });
+            stopPolling();
           }
         },
       });
+      void checkResultOnce();
     }
 
-    async function startRazorpayCharge() {
+    async function startCashfreeCharge(attempt = 0): Promise<void> {
       const browser = {
         javaEnabled: typeof navigator.javaEnabled === "function" ? navigator.javaEnabled() : false,
         javascriptEnabled: true,
@@ -102,43 +116,74 @@ export function PravaPayment({ sessionId }: PravaPaymentProps) {
       if (payload?.status === "requires_action" && payload.actionUrl) {
         setStatus("requires_action");
         setActionUrl(payload.actionUrl);
-        setMessage("Razorpay needs one final bank verification before the payment can finish.");
+        setMessage(payload.message ?? "Cashfree needs one final bank verification before the payment can finish.");
         return;
       }
       if (payload?.status === "charged") {
         setStatus("authorized");
         setMessage("Payment confirmed. Zoosh is distributing the amount to the group.");
+        window.setTimeout(() => router.replace(returnPath), 700);
         return;
       }
       if (payload?.status === "declined") {
         setStatus("declined");
-        setMessage("Razorpay declined the payment.");
+        setMessage(payload.message ?? "Cashfree declined the payment.");
         return;
       }
       setStatus("authorized");
-      setMessage(payload?.message ?? "Payment is being confirmed by Razorpay.");
+      setMessage(payload?.message ?? "Payment is being confirmed by Cashfree.");
+      if (attempt < 20 && !cancelled) {
+        await new Promise((resolve) => window.setTimeout(resolve, 3000));
+        return startCashfreeCharge(attempt + 1);
+      }
+      if (!cancelled) setMessage("Cashfree is still confirming this payment. Return to the outing and refresh shortly.");
     }
 
-    async function checkResult() {
-      for (let attempt = 0; attempt < 30; attempt += 1) {
-        const response = await fetch(`/api/settlements/${sessionId}/result`, { method: "POST" });
+    async function checkResultOnce() {
+      if (cancelled || pollInFlight || finalizationStartedRef.current) return;
+      pollInFlight = true;
+      try {
+        const response = await fetch(`/api/settlements/${sessionId}/result`, { method: "POST", cache: "no-store" });
         const payload = (await response.json().catch(() => null)) as { status?: string; message?: string; error?: { message?: string } } | null;
         if (payload?.status === "authorized") {
-          await startRazorpayCharge();
+          finalizationStartedRef.current = true;
+          stopPolling();
+          await startCashfreeCharge();
+          return;
+        }
+        if (payload?.status === "charged") {
+          finalizationStartedRef.current = true;
+          stopPolling();
+          setStatus("authorized");
+          setMessage("Payment confirmed. Zoosh is distributing the amount to the group.");
+          window.setTimeout(() => router.replace(returnPath), 700);
           return;
         }
         if (payload?.status === "declined") {
+          finalizationStartedRef.current = true;
+          stopPolling();
           setStatus("declined");
           setMessage(payload.message ?? "The payment was declined.");
           return;
         }
         if (!response.ok && response.status !== 202) {
-          throw new Error(payload?.error?.message ?? "The payment result could not be confirmed.");
+          transientErrors += 1;
+          if (transientErrors >= 3) throw new Error(payload?.error?.message ?? "The payment result could not be confirmed.");
+          return;
         }
-        await new Promise((resolve) => window.setTimeout(resolve, 3000));
+        transientErrors = 0;
+      } catch (error) {
+        stopPolling();
+        if (!cancelled) {
+          setStatus("error");
+          setMessage(formatPravaError(error));
+        }
+      } finally {
+        pollInFlight = false;
       }
-      throw new Error("Payment confirmation timed out. You can safely return to the outing and try again later.");
     }
+
+    pollTimer = window.setInterval(() => void checkResultOnce(), 3000);
 
     void start().catch((error: unknown) => {
       if (!cancelled) {
@@ -149,10 +194,11 @@ export function PravaPayment({ sessionId }: PravaPaymentProps) {
 
     return () => {
       cancelled = true;
+      stopPolling();
       sdkRef.current?.destroy();
       sdkRef.current = null;
     };
-  }, [sessionId]);
+  }, [returnPath, router, sessionId]);
 
   return (
     <section className="prava-payment-box mt-6 overflow-hidden rounded-[1.25rem] border border-[color:var(--line)] bg-[color:var(--surface-strong)]">

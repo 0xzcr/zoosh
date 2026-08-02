@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { apiError } from "@/lib/api-errors";
+import { getAppUrl } from "@/lib/app-url";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { notifySettlementSession } from "@/lib/settlement-notifications";
 
@@ -33,7 +34,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ sub
     return apiError("VALIDATION_FAILED", error.message, 400);
   }
 
-  const appUrl = process.env.APP_URL ?? new URL(request.url).origin;
+  const appUrl = getAppUrl(request.url);
   const notifications = [];
 
   for (const session of (sessions ?? []) as Array<{ session_id: string }>) {

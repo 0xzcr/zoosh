@@ -2,7 +2,7 @@ import "server-only";
 
 import { ProviderConfigurationError, ProviderRequestError } from "@/lib/provider-errors";
 
-export async function sendSettlementEmail(input: { to: string; amountLabel: string; paymentUrl: string; outingName: string }) {
+export async function sendSettlementEmail(input: { to: string; amountLabel: string; breakdown: string; paymentUrl: string; outingName: string }) {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
   if (!apiKey || !from) {
@@ -20,7 +20,7 @@ export async function sendSettlementEmail(input: { to: string; amountLabel: stri
       from,
       to: [input.to],
       subject: `Zoosh settlement for ${input.outingName}`,
-      text: `You have ${input.amountLabel} to pay for ${input.outingName}. Review and approve it here: ${input.paymentUrl}`,
+      text: `You have ${input.amountLabel} to pay for ${input.outingName}. ${input.breakdown ? `This covers ${input.breakdown}. ` : ""}Review and approve it here: ${input.paymentUrl}`,
     }),
   });
   const body = (await response.json().catch(() => null)) as { id?: string; message?: string } | null;

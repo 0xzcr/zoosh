@@ -49,7 +49,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ se
 
     return NextResponse.json({
       status: "authorized",
-      message: "Prava approved the payment. Zoosh is now submitting the single charge through Razorpay.",
+      message: "Prava approved the payment. Zoosh is now submitting the single charge through Cashfree.",
     }, { status: 202 });
   } catch (error) {
     return apiError("VALIDATION_FAILED", error instanceof Error ? error.message : "The payment result could not be checked.", 503);

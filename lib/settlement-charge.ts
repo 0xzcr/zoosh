@@ -1,12 +1,15 @@
 import "server-only";
 
 import {
-  captureRazorpayPayment,
-  createRazorpayOrder,
-  createRazorpayServerCardPayment,
-  getRazorpayPayment,
-  type RazorpayBrowserDetails,
-} from "@/lib/razorpay";
+  createCashfreeOrder,
+  createCashfreeTokenPayment,
+  getCashfreeOrder,
+  getCashfreePayments,
+  getCashfreePaymentStatus,
+  type CashfreeBrowserDetails,
+} from "@/lib/cashfree";
+import { ProviderRequestError } from "@/lib/provider-errors";
+import { getAppUrl } from "@/lib/app-url";
 import {
   extractPravaCredential,
   getPravaPaymentResult,
@@ -30,29 +33,24 @@ export type SettlementChargeResult = {
   status: "processing" | "requires_action" | "charged" | "declined";
   paymentId?: string;
   actionUrl?: string;
+  message?: string;
   payouts?: Array<{ payoutId: string; status: string; transferId?: string }>;
 };
-
-function getAppUrl(requestUrl?: string) {
-  const configured = process.env.APP_URL?.trim();
-  if (configured) return configured.replace(/\/$/, "");
-  if (requestUrl) return new URL(requestUrl).origin;
-  throw new Error("APP_URL is required for Razorpay payment callbacks.");
-}
-
-function getRequestIp(request: Request) {
-  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const realIp = request.headers.get("x-real-ip")?.trim();
-  const ip = forwarded || realIp;
-  if (!ip) throw new Error("The payment request did not include the payer IP address.");
-  return ip;
-}
 
 function getCardholderName(user: { user_metadata?: Record<string, unknown> | null; email?: string | null }) {
   const metadata = user.user_metadata ?? {};
   const name = [metadata.full_name, metadata.name]
     .find((value): value is string => typeof value === "string" && value.trim().length > 0);
   return (name ?? user.email?.split("@")[0] ?? "Zoosh member").trim().slice(0, 100);
+}
+
+function getIndianPhone(phone: string) {
+  const digits = phone.replace(/\D/g, "");
+  const local = digits.startsWith("91") && digits.length === 12 ? digits.slice(2) : digits;
+  if (!/^\d{10}$/.test(local)) {
+    throw new Error("Cashfree requires an Indian 10-digit phone number. Update it in Profile first.");
+  }
+  return local;
 }
 
 async function getSession(admin: any, sessionId: string) {
@@ -88,7 +86,7 @@ async function getPayer(admin: any, session: ChargeSession) {
   if (!contact?.phone_e164) throw new Error("Add your phone number in Profile before completing this payment.");
   return {
     email: authUser.user.email,
-    contact: contact.phone_e164,
+    contact: getIndianPhone(contact.phone_e164),
     name: getCardholderName(authUser.user),
   };
 }
@@ -112,45 +110,57 @@ async function markDeclined(admin: any, session: ChargeSession, reason: string) 
       const transactionRef = await getPravaTransactionRef(session);
       await reportPravaStatus(session.prava_session_id, transactionRef, "DECLINED");
     } catch {
-      // The local decline is authoritative; a later reconciliation can retry Prava reporting.
+      // The local decline remains authoritative; a later reconciliation can retry Prava reporting.
     }
   }
 }
 
-async function finalizeCapturedPayment(input: {
+async function getCashfreePaymentForOrder(orderId: string, paymentId?: string | null) {
+  const payments = await getCashfreePayments(orderId);
+  const matching = paymentId ? payments.find((payment) => String(payment.cf_payment_id) === paymentId) : undefined;
+  return matching ?? [...payments].sort((left, right) => {
+    const rightTime = right.payment_time ? Date.parse(right.payment_time) : 0;
+    const leftTime = left.payment_time ? Date.parse(left.payment_time) : 0;
+    return rightTime - leftTime || String(right.cf_payment_id ?? "").localeCompare(String(left.cf_payment_id ?? ""));
+  })[0];
+}
+
+async function finalizeCashfreePayment(input: {
   admin: any;
   session: ChargeSession;
-  paymentId: string;
+  paymentId?: string | null;
   orderId: string;
 }) : Promise<SettlementChargeResult> {
-  const payment = await getRazorpayPayment(input.paymentId);
-  if (payment.order_id && payment.order_id !== input.orderId) {
-    throw new Error("Razorpay returned a payment for a different order.");
+  const payment = await getCashfreePaymentForOrder(input.orderId, input.paymentId);
+  const paymentStatus = getCashfreePaymentStatus(payment);
+  if (!paymentStatus.paymentId) return { status: "processing" };
+  if (payment?.order_id && payment.order_id !== input.orderId) {
+    throw new Error("Cashfree returned a payment for a different order.");
   }
 
-  let paymentStatus = payment.status;
-  if (paymentStatus === "failed") {
-    const reason = payment.error_description ?? payment.error_code ?? "Razorpay declined the payment.";
+  const normalizedStatus = paymentStatus.status.toUpperCase();
+  if (["FAILED", "CANCELLED", "VOID", "USER_DROPPED"].includes(normalizedStatus)) {
+    const reason = paymentStatus.message ?? "Cashfree declined the payment.";
     await markDeclined(input.admin, input.session, reason);
-    return { status: "declined", paymentId: input.paymentId };
+    return { status: "declined", paymentId: paymentStatus.paymentId, message: reason };
   }
 
-  if (paymentStatus === "authorized") {
-    const captured = await captureRazorpayPayment({
-      paymentId: input.paymentId,
-      amountPaise: input.session.total_amount_paise,
-    });
-    paymentStatus = captured.status;
+  if (normalizedStatus !== "SUCCESS") {
+    return {
+      status: "processing",
+      paymentId: paymentStatus.paymentId,
+      message: "Cashfree is still confirming the payment.",
+    };
   }
 
-  if (paymentStatus !== "captured") {
-    return { status: "processing", paymentId: input.paymentId };
+  if (typeof paymentStatus.amount === "number" && Math.round(paymentStatus.amount * 100) !== input.session.total_amount_paise) {
+    throw new Error("Cashfree returned a payment amount that does not match the settlement.");
   }
 
   const transactionRef = await getPravaTransactionRef(input.session);
   const { error } = await input.admin.rpc("mark_settlement_session_charged", {
     p_session_id: input.session.id,
-    p_provider_payment_id: input.paymentId,
+    p_provider_payment_id: paymentStatus.paymentId,
     p_provider_transaction_ref: transactionRef,
   });
   if (error) {
@@ -167,13 +177,50 @@ async function finalizeCapturedPayment(input: {
   }
 
   const payouts = await distributeChargedSettlement(input.session.id);
-  return { status: "charged", paymentId: input.paymentId, payouts };
+  return { status: "charged", paymentId: paymentStatus.paymentId, payouts };
+}
+
+async function ensureCashfreeOrder(input: {
+  admin: any;
+  session: ChargeSession;
+  payer: { email: string; contact: string; name: string };
+  requestUrl: string;
+}) {
+  const orderId = input.session.provider_order_id ?? `zoosh_${input.session.id.replace(/-/g, "")}`;
+  let order;
+  try {
+    order = await createCashfreeOrder({
+      orderId,
+      amountPaise: input.session.total_amount_paise,
+      customerId: input.session.debtor_id,
+      customerName: input.payer.name,
+      customerEmail: input.payer.email,
+      customerPhone: input.payer.contact,
+      returnUrl: `${getAppUrl(input.requestUrl)}/settlements/${input.session.id}?cashfree=return`,
+      notifyUrl: `${getAppUrl(input.requestUrl)}/api/webhooks/cashfree/payment`,
+      settlementId: input.session.id,
+    });
+  } catch (error) {
+    if (!(error instanceof ProviderRequestError && error.status === 409) && !(error instanceof Error && error.message.toLowerCase().includes("already"))) throw error;
+    order = await getCashfreeOrder(orderId);
+  }
+
+  const { data, error } = await input.admin
+    .from("settlement_sessions")
+    .update({ provider_order_id: orderId, updated_at: new Date().toISOString() })
+    .eq("id", input.session.id)
+    .eq("status", "approved_awaiting_charge")
+    .select("id")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("The settlement changed before the Cashfree order could be saved.");
+  return { orderId, paymentSessionId: order.payment_session_id };
 }
 
 export async function initiateSettlementCharge(input: {
   sessionId: string;
   user: { id: string; user_metadata?: Record<string, unknown> | null; email?: string | null };
-  browser: RazorpayBrowserDetails;
+  browser: CashfreeBrowserDetails;
   request: Request;
 }) : Promise<SettlementChargeResult> {
   const admin = createSupabaseAdminClient() as any;
@@ -188,79 +235,113 @@ export async function initiateSettlementCharge(input: {
   if (claim !== true) {
     session = await getSession(admin, session.id);
     if (session?.status === "charged") return { status: "charged", paymentId: session.provider_payment_id ?? undefined };
-    return { status: "processing", paymentId: session?.provider_payment_id ?? undefined };
-  }
-
-  try {
-    if (session.provider_payment_id) {
-      if (!session.provider_order_id) throw new Error("The existing Razorpay payment is missing its order reference.");
-      return finalizeCapturedPayment({
+    if (session?.provider_order_id && session.provider_payment_id) {
+      return finalizeCashfreePayment({
         admin,
         session,
         paymentId: session.provider_payment_id,
         orderId: session.provider_order_id,
       });
     }
+    return { status: "processing", paymentId: session?.provider_payment_id ?? undefined };
+  }
 
-    const [credential, payer] = await Promise.all([getPravaCredential(session), getPayer(admin, session)]);
-    const ip = getRequestIp(input.request);
-    let orderId = session.provider_order_id;
-    if (!orderId) {
-      const order = await createRazorpayOrder({
-        amountPaise: session.total_amount_paise,
-        receipt: session.id,
-        notes: { zoosh_settlement_id: session.id },
+  try {
+    const order = session.provider_order_id
+      ? { orderId: session.provider_order_id, paymentSessionId: (await getCashfreeOrder(session.provider_order_id)).payment_session_id }
+      : await ensureCashfreeOrder({ admin, session, payer: await getPayer(admin, session), requestUrl: input.request.url });
+
+    if (session.provider_payment_id) {
+      return finalizeCashfreePayment({
+        admin,
+        session,
+        paymentId: session.provider_payment_id,
+        orderId: order.orderId,
       });
-      orderId = order.id;
-      const { data: orderUpdate, error } = await admin.from("settlement_sessions").update({ provider_order_id: orderId, updated_at: new Date().toISOString() }).eq("id", session.id).eq("status", "approved_awaiting_charge").select("id").maybeSingle();
-      if (error) throw new Error(error.message);
-      if (!orderUpdate) throw new Error("The settlement changed before the Razorpay order could be saved.");
     }
 
-    const payment = await createRazorpayServerCardPayment({
-      amountPaise: session.total_amount_paise,
-      orderId,
-      email: payer.email,
-      contact: payer.contact,
-      cardholderName: payer.name,
+    const existingPayment = await getCashfreePaymentForOrder(order.orderId);
+    if (existingPayment?.cf_payment_id != null) {
+      const existingPaymentId = String(existingPayment.cf_payment_id);
+      const { data: paymentUpdate, error: paymentUpdateError } = await admin
+        .from("settlement_sessions")
+        .update({ provider_payment_id: existingPaymentId, updated_at: new Date().toISOString() })
+        .eq("id", session.id)
+        .eq("status", "approved_awaiting_charge")
+        .select("id")
+        .maybeSingle();
+      if (paymentUpdateError) throw new Error(paymentUpdateError.message);
+      if (!paymentUpdate) throw new Error("The settlement changed before the existing Cashfree payment could be saved.");
+      session = { ...session, provider_order_id: order.orderId, provider_payment_id: existingPaymentId };
+      return finalizeCashfreePayment({ admin, session, paymentId: existingPaymentId, orderId: order.orderId });
+    }
+
+    const credential = await getPravaCredential(session);
+    const payment = await createCashfreeTokenPayment({
+      paymentSessionId: order.paymentSessionId,
       credential,
+      cardholderName: getCardholderName(input.user),
       browser: input.browser,
-      ip,
-      callbackUrl: `${getAppUrl(input.request.url)}/api/webhooks/razorpay/s2s/${session.id}`,
-      referrer: input.browser.referrer || getAppUrl(input.request.url),
+      orderId: order.orderId,
+      idempotencyKey: session.id,
     });
-    const paymentId = payment.razorpay_payment_id;
-    if (!paymentId) throw new Error("Razorpay did not return a payment id.");
-    const { data: paymentUpdate, error: paymentUpdateError } = await admin.from("settlement_sessions").update({ provider_payment_id: paymentId, updated_at: new Date().toISOString() }).eq("id", session.id).eq("status", "approved_awaiting_charge").select("id").maybeSingle();
+    const paymentId = payment.cf_payment_id == null ? undefined : String(payment.cf_payment_id);
+    if (!paymentId) throw new Error("Cashfree did not return a payment id.");
+    const { data: paymentUpdate, error: paymentUpdateError } = await admin
+      .from("settlement_sessions")
+      .update({ provider_payment_id: paymentId, updated_at: new Date().toISOString() })
+      .eq("id", session.id)
+      .eq("status", "approved_awaiting_charge")
+      .select("id")
+      .maybeSingle();
     if (paymentUpdateError) throw new Error(paymentUpdateError.message);
-    if (!paymentUpdate) throw new Error("The settlement changed before the Razorpay payment could be saved.");
+    if (!paymentUpdate) throw new Error("The settlement changed before the Cashfree payment could be saved.");
 
-    const action = payment.next?.find((candidate) => (candidate.action === "redirect" || candidate.action === "otp_generate") && typeof candidate.url === "string" && /^https?:\/\//.test(candidate.url));
-    if (action?.url) return { status: "requires_action", paymentId, actionUrl: action.url };
+    const actionUrl = payment.data?.url;
+    if (actionUrl && /^https?:\/\//.test(actionUrl)) {
+      return { status: "requires_action", paymentId, actionUrl, message: "Continue in Cashfree to complete bank verification." };
+    }
 
-    session = { ...session, provider_order_id: orderId, provider_payment_id: paymentId };
-    return finalizeCapturedPayment({ admin, session, paymentId, orderId });
+    session = { ...session, provider_order_id: order.orderId, provider_payment_id: paymentId };
+    return finalizeCashfreePayment({ admin, session, paymentId, orderId: order.orderId });
   } catch (error) {
-    const reason = error instanceof Error ? error.message : "Razorpay could not start the payment.";
+    const reason = error instanceof Error ? error.message : "Cashfree could not start the payment.";
     await admin.rpc("release_settlement_charge", { p_session_id: session.id, p_failure_reason: reason });
     throw error;
   }
 }
 
-export async function handleRazorpayS2SCallback(input: {
-  sessionId: string;
-  paymentId: string;
+export async function handleCashfreePaymentWebhook(input: {
   orderId: string;
+  paymentId: string;
+  status: string;
 }) {
   const admin = createSupabaseAdminClient() as any;
-  const session = await getSession(admin, input.sessionId);
-  if (!session) throw new Error("Settlement session not found.");
-  if (!session.provider_order_id || session.provider_order_id !== input.orderId) throw new Error("Razorpay order does not match the settlement.");
-  if (session.status === "charged") return { status: "charged" as const, paymentId: input.paymentId };
-  return finalizeCapturedPayment({ admin, session, paymentId: input.paymentId, orderId: input.orderId });
+  const session = await getSessionByOrderId(admin, input.orderId);
+  if (!session) throw new Error("Settlement session not found for Cashfree order.");
+  if (session.status === "charged") return { status: "charged" as const, paymentId: session.provider_payment_id ?? input.paymentId };
+  if (["FAILED", "CANCELLED", "VOID", "USER_DROPPED"].includes(input.status.toUpperCase())) {
+    await markDeclined(admin, session, `Cashfree reported ${input.status.toLowerCase()} for the payment.`);
+    return { status: "declined" as const, paymentId: input.paymentId };
+  }
+  if (input.status !== "SUCCESS") return { status: "processing" as const, paymentId: input.paymentId };
+  return finalizeCashfreePayment({ admin, session, paymentId: input.paymentId, orderId: input.orderId });
 }
 
-export async function markRazorpayCallbackVerified(sessionId: string) {
+async function getSessionByOrderId(admin: any, orderId: string) {
+  const { data, error } = await admin
+    .from("settlement_sessions")
+    .select("id, debtor_id, subgroup_id, total_amount_paise, status, prava_session_id, provider_order_id, provider_payment_id")
+    .eq("provider_order_id", orderId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data as ChargeSession | null;
+}
+
+export async function markCashfreeCallbackVerified(sessionId: string) {
   const admin = createSupabaseAdminClient() as any;
-  await admin.from("settlement_sessions").update({ provider_callback_verified_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", sessionId);
+  await admin
+    .from("settlement_sessions")
+    .update({ provider_callback_verified_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("id", sessionId);
 }

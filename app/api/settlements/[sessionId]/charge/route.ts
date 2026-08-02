@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { apiError } from "@/lib/api-errors";
+import type { CashfreeBrowserDetails } from "@/lib/cashfree";
 import { initiateSettlementCharge } from "@/lib/settlement-charge";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { RazorpayBrowserDetails } from "@/lib/razorpay";
 
-function parseBrowserDetails(value: unknown): RazorpayBrowserDetails | null {
+function parseBrowserDetails(value: unknown): CashfreeBrowserDetails | null {
   if (!value || typeof value !== "object") return null;
   const browser = value as Record<string, unknown>;
   const booleanValue = (candidate: unknown) => typeof candidate === "boolean" ? candidate : null;

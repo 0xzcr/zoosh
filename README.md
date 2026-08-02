@@ -1,6 +1,6 @@
 # Zoosh
 
-Zoosh is a group-expense app for friends. Members create groups and outings, log shared expenses, review balances, and settle the final amounts through one net payment per debtor. Supabase handles authentication and data, Prava handles passkey-protected payment authorization, Linq and email deliver settlement notifications, and Razorpay is used for recipient payouts.
+Zoosh is a group-expense app for friends. Members create groups and outings, log shared expenses, review balances, and settle the final amounts through one net payment per debtor. Supabase handles authentication and data, Prava handles passkey-protected payment authorization, Cashfree handles the incoming payment and recipient payouts, and Linq and email deliver settlement notifications.
 
 ## Project Structure
 
@@ -25,7 +25,7 @@ tests/                Automated ledger and application tests
 - `lib/ledger.ts`: client-side ledger and net-settlement calculations used by tests and UI logic.
 - `lib/supabase/`: browser, server, admin, and session-refresh Supabase clients.
 - `lib/prava.ts`: server-side Prava session creation, result polling, credential extraction, and status reporting.
-- `lib/razorpay.ts`: Razorpay transfer requests and webhook verification.
+- `lib/cashfree.ts`: Cashfree payment, beneficiary, payout transfer, and webhook verification.
 - `lib/linq.ts`: Linq notifications and webhook verification.
 - `supabase/migrations/`: the source of truth for the database schema and security policies.
 

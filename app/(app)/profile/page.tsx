@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { EmptyState } from "@/components/common/empty-state";
 import { NotificationContactForm } from "@/components/forms/notification-contact-form";
+import { PayoutAccountForm } from "@/components/forms/payout-account-form";
 import { BellRing, MessageCircleMore, UserPlus } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -13,7 +14,10 @@ export default async function ProfilePage() {
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login?next=/profile");
-  const { data: contact } = await supabase.from("notification_contacts").select("phone_e164").eq("user_id", user.id).maybeSingle();
+  const [{ data: contact }, { data: payoutAccount }] = await Promise.all([
+    supabase.from("notification_contacts").select("phone_e164").eq("user_id", user.id).maybeSingle(),
+    supabase.from("user_payout_accounts").select("cashfree_beneficiary_id, onboarding_complete").eq("user_id", user.id).maybeSingle(),
+  ]);
 
   return (
     <AppShell>
@@ -63,6 +67,11 @@ export default async function ProfilePage() {
         <p className="eyebrow">Settlement notifications</p>
         <h2 className="mt-3 font-[family-name:var(--font-display)] text-3xl tracking-[-0.04em]">Choose where payment requests reach you.</h2>
         <NotificationContactForm initialPhone={contact?.phone_e164 ?? null} />
+      </section>
+      <section className="mt-5 section-frame max-w-2xl rounded-[1.75rem] p-6 sm:p-8">
+        <p className="eyebrow">Payout destination</p>
+        <h2 className="mt-3 font-[family-name:var(--font-display)] text-3xl tracking-[-0.04em]">Receive your share automatically.</h2>
+        <PayoutAccountForm connected={Boolean(payoutAccount?.cashfree_beneficiary_id)} verified={Boolean(payoutAccount?.onboarding_complete)} />
       </section>
     </AppShell>
   );

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { safeAuthRedirect } from "../constants/auth.ts";
-import { calculateEqualExpenseSplit, computeLedgerBalances, computeSettlementBatches } from "../lib/ledger.ts";
+import { applyPaidSettlementAmounts, calculateEqualExpenseSplit, computeLedgerBalances, computeSettlementBatches, summarizePaidSettlementAmounts } from "../lib/ledger.ts";
 
 test("computes a two-person split", () => {
   const balances = computeLedgerBalances(["alice", "bob"], [
@@ -64,6 +64,27 @@ test("nets a cycle into one debtor payment and direct creditor payouts", () => {
       { creditorId: "b", amountPaise: 20000 },
     ],
   });
+});
+
+test("keeps a debtor owing until each creditor payout is paid", () => {
+  const amounts = summarizePaidSettlementAmounts({
+    sessions: [{ id: "session-1", debtorId: "alice" }],
+    payouts: [
+      { settlementSessionId: "session-1", creditorId: "bob", amountPaise: 40000, status: "paid" },
+      { settlementSessionId: "session-1", creditorId: "carol", amountPaise: 20000, status: "pending_payout" },
+    ],
+  });
+  const balances = applyPaidSettlementAmounts(
+    [
+      { userId: "alice", netBalancePaise: -60000 },
+      { userId: "bob", netBalancePaise: 40000 },
+      { userId: "carol", netBalancePaise: 20000 },
+    ],
+    amounts.paidDebtorAmounts,
+    amounts.paidCreditorAmounts,
+  );
+
+  assert.deepEqual(Object.fromEntries(balances), { alice: -20000, bob: 0, carol: 20000 });
 });
 
 test("keeps auth redirects on the local application origin", () => {

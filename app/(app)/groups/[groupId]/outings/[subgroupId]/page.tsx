@@ -11,6 +11,7 @@ import { SubgroupJoinForm } from "@/components/forms/subgroup-join-form";
 import { ExpenseVoidButton } from "@/components/forms/expense-void-button";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/format-currency";
+import { summarizePaidSettlementAmounts } from "@/lib/ledger";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { resolveUserLabel } from "@/lib/user-label";
@@ -62,6 +63,13 @@ type SettlementSessionRow = {
   status: "pending" | "approved_awaiting_charge" | "charged" | "declined" | "expired";
 };
 
+type SettlementPayoutRow = {
+  settlement_session_id: string;
+  creditor_id: string;
+  amount_paise: number;
+  status: "pending_payout" | "paid" | "failed";
+};
+
 export default async function OutingPage({ params }: { params: Promise<{ groupId: string; subgroupId: string }> }) {
   const { groupId, subgroupId } = await params;
   if (!groupId || !subgroupId) notFound();
@@ -76,7 +84,7 @@ export default async function OutingPage({ params }: { params: Promise<{ groupId
   }
 
   const admin = createSupabaseAdminClient() as any;
-  const [{ data: groupData }, { data: subgroupData }, { data: membershipsData }, { data: balanceData }, { data: expensesData }, { data: settlementData }] = await Promise.all([
+  const [{ data: groupData }, { data: subgroupData }, { data: membershipsData }, { data: balanceData }, { data: expensesData }, { data: settlementData }, { data: leaderInactiveData }] = await Promise.all([
     admin.from("friend_groups").select("id, name").eq("id", groupId).maybeSingle(),
     admin
       .from("outing_subgroups")
@@ -98,7 +106,16 @@ export default async function OutingPage({ params }: { params: Promise<{ groupId
       .select("id, debtor_id, total_amount_paise, status")
       .eq("subgroup_id", subgroupId)
       .order("created_at", { ascending: true }),
+    admin.rpc("is_subgroup_leader_inactive", { p_subgroup_id: subgroupId }),
   ]);
+
+  const settlementIds = ((settlementData ?? []) as Array<{ id: string }>).map((session) => session.id);
+  const { data: payoutData } = settlementIds.length
+    ? await admin
+        .from("settlement_payouts")
+        .select("settlement_session_id, creditor_id, amount_paise, status")
+        .in("settlement_session_id", settlementIds)
+    : { data: [] as SettlementPayoutRow[] };
 
   const group = groupData as FriendGroupRow | null;
   const subgroup = subgroupData as OutingSubgroupRow | null;
@@ -106,12 +123,23 @@ export default async function OutingPage({ params }: { params: Promise<{ groupId
   const balanceRows = (balanceData ?? []) as BalanceRow[];
   const expenses = (expensesData ?? []) as ExpenseRow[];
   const settlementSessions = (settlementData ?? []) as SettlementSessionRow[];
+  const settlementPayouts = (payoutData ?? []) as SettlementPayoutRow[];
+  const { paidDebtorAmounts, paidCreditorAmounts } = summarizePaidSettlementAmounts({
+    sessions: settlementSessions.map((session) => ({ id: session.id, debtorId: session.debtor_id })),
+    payouts: settlementPayouts.map((payout) => ({
+      settlementSessionId: payout.settlement_session_id,
+      creditorId: payout.creditor_id,
+      amountPaise: payout.amount_paise,
+      status: payout.status,
+    })),
+  });
 
   if (!group || !subgroup) {
     notFound();
   }
 
   const currentUserMember = memberships.some((membership) => membership.user_id === user.id);
+  const leaderInactive = leaderInactiveData === true;
   const memberLabels = await Promise.all(
     memberships.map(async (membership) => ({
       ...membership,
@@ -144,6 +172,9 @@ export default async function OutingPage({ params }: { params: Promise<{ groupId
         <div className="section-frame rounded-[1.75rem] p-6 sm:p-8">
           <p className="eyebrow">{subgroup.status === "active" ? "Active outing" : "Final balance review"}</p>
           <h1 className="mt-3 font-[family-name:var(--font-display)] text-5xl tracking-[-0.06em]">{subgroup.name}</h1>
+          <p className="mt-2 text-sm text-[color:var(--muted)]">
+            {subgroup.leader_id === user.id ? "You are the outing leader." : `${await resolveUserLabel(subgroup.leader_id)} is the outing leader.`}
+          </p>
 
           <div className="mt-6 flex flex-wrap gap-3 text-sm">
             <span className="inline-flex items-center gap-2 rounded-full bg-[color:var(--surface-strong)] px-4 py-2 font-medium text-[color:var(--foreground)]">
@@ -179,9 +210,9 @@ export default async function OutingPage({ params }: { params: Promise<{ groupId
             </div>
           )}
 
-          {subgroup.status === "active" && subgroup.leader_id === user.id ? (
+          {subgroup.status === "active" && (subgroup.leader_id === user.id || (leaderInactive && currentUserMember)) ? (
             <div className="mt-6 border-t border-[color:var(--line)] pt-5">
-              <p className="mb-3 text-sm leading-6 text-[color:var(--muted)]">Ending locks the ledger and opens the final balance review.</p>
+              <p className="mb-3 text-sm leading-6 text-[color:var(--muted)]">Ending locks the ledger and opens the final balance review.{subgroup.leader_id !== user.id ? " The leader has been inactive for 30 days, so members can close this outing." : ""}</p>
               <EndOutingButton subgroupId={subgroup.id} />
             </div>
           ) : null}
@@ -190,6 +221,7 @@ export default async function OutingPage({ params }: { params: Promise<{ groupId
             <section className="mt-6 border-t border-[color:var(--line)] pt-5">
               <p className="eyebrow">Settlement</p>
               <h2 className="mt-2 font-[family-name:var(--font-display)] text-3xl tracking-[-0.04em]">Settle the final amounts</h2>
+              <Link href={`/groups/${groupId}/outings/${subgroup.id}/report`} className="mt-3 inline-flex text-sm font-semibold text-[color:var(--accent-light)] underline underline-offset-4">View expense report</Link>
               {settlementSummaries.length === 0 ? (
                 <div className="mt-4 space-y-4">
                   <p className="text-sm leading-6 text-[color:var(--muted)]">The final balances are ready. The outing creator can prepare one settlement request per debtor.</p>
@@ -200,7 +232,7 @@ export default async function OutingPage({ params }: { params: Promise<{ groupId
                   <p className="text-sm leading-6 text-[color:var(--muted)]">Settlement amounts are prepared for review.</p>
                   {settlementSummaries.map((session) => (
                     <div key={session.id} className="flex items-center justify-between gap-4 border-b border-[color:var(--line)] py-3 text-sm last:border-b-0">
-                      {session.debtor_id === user.id ? <Link href={`/settlements/${session.id}`} className="font-medium text-[color:var(--accent-light)] underline underline-offset-4">{session.debtorLabel} · review payment</Link> : <span className="font-medium text-[color:var(--foreground)]">{session.debtorLabel}</span>}
+                      {session.debtor_id === user.id ? <Link href={`/settlements/${session.id}`} className="font-medium text-[color:var(--accent-light)] underline underline-offset-4">{session.debtorLabel} · review payment</Link> : settlementPayouts.some((payout) => payout.settlement_session_id === session.id && payout.creditor_id === user.id) ? <Link href={`/settlements/${session.id}`} className="font-medium text-[color:var(--accent-light)] underline underline-offset-4">{session.debtorLabel} · view request</Link> : <span className="font-medium text-[color:var(--foreground)]">{session.debtorLabel}</span>}
                       <span className="text-[color:var(--muted)]">{formatCurrency(session.total_amount_paise, subgroup.currency)} · {session.status}</span>
                     </div>
                   ))}
@@ -211,7 +243,14 @@ export default async function OutingPage({ params }: { params: Promise<{ groupId
         </div>
 
         <div className="space-y-6">
-          <BalanceSheet members={memberLabels} balances={balanceRows} currency={subgroup.currency} hideZeroBalances={subgroup.status !== "active"} />
+          <BalanceSheet
+            members={memberLabels}
+            balances={balanceRows}
+            currency={subgroup.currency}
+            hideZeroBalances={subgroup.status !== "active"}
+            paidDebtorAmounts={[...paidDebtorAmounts].map(([user_id, net_balance_paise]) => ({ user_id, net_balance_paise }))}
+            paidCreditorAmounts={[...paidCreditorAmounts].map(([user_id, net_balance_paise]) => ({ user_id, net_balance_paise }))}
+          />
 
           <section className="border-y border-[color:var(--line)] py-6 sm:py-8">
             <div className="flex items-center gap-2">

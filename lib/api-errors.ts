@@ -11,7 +11,8 @@ export type ApiErrorCode =
   | "SUBGROUP_ALREADY_ENDED"
   | "EXPENSE_INVALID_AMOUNT"
   | "EXPENSE_NOT_PAYER"
-  | "EXPENSE_LOCKED";
+  | "EXPENSE_LOCKED"
+  | "REMINDER_RATE_LIMITED";
 
 export function apiError(code: ApiErrorCode, message: string, status: number) {
   return NextResponse.json(

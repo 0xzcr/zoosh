@@ -39,17 +39,20 @@ async function linqRequest<T>(path: string, body: unknown) {
 export async function sendLinqSettlementNotification(input: {
   phoneE164: string;
   amountLabel: string;
+  breakdown: string;
   paymentUrl: string;
   settlementId: string;
+  notificationId: string;
 }) {
   const { from } = getLinqConfig();
-  const idempotencyKey = `zoosh-settlement-${input.settlementId}`;
+  // Linq replies never approve a payment; only the Prava passkey flow can do that.
+  const idempotencyKey = `zoosh-settlement-${input.settlementId}-${input.notificationId}`;
   const first = await linqRequest<LinqMessageResponse>("/chats", {
     from,
     to: [input.phoneE164],
     message: {
       idempotency_key: `${idempotencyKey}-intro`,
-      parts: [{ type: "text", value: `Zoosh settlement: you have ${input.amountLabel} to pay for your outing.` }],
+      parts: [{ type: "text", value: `Zoosh settlement: you have ${input.amountLabel} to pay for your outing. ${input.breakdown ? `This covers ${input.breakdown}.` : ""}` }],
     },
   });
 

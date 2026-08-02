@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { LoaderCircle, ShieldCheck } from "lucide-react";
 
 type SettlementChargeProps = {
   sessionId: string;
+  returnPath: string;
 };
 
 function browserDetails() {
@@ -21,39 +23,49 @@ function browserDetails() {
   };
 }
 
-export function SettlementCharge({ sessionId }: SettlementChargeProps) {
+export function SettlementCharge({ sessionId, returnPath }: SettlementChargeProps) {
+  const router = useRouter();
   const [message, setMessage] = useState("Finishing the secure payment...");
   const [actionUrl, setActionUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void fetch(`/api/settlements/${sessionId}/charge`, {
+    async function finishCharge(attempt = 0): Promise<void> {
+      const response = await fetch(`/api/settlements/${sessionId}/charge`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ browser: browserDetails() }),
-    }).then(async (response) => {
-      const payload = (await response.json().catch(() => null)) as { status?: string; actionUrl?: string; error?: { message?: string } } | null;
+      });
+      const payload = (await response.json().catch(() => null)) as { status?: string; actionUrl?: string; message?: string; error?: { message?: string } } | null;
       if (cancelled) return;
       if (!response.ok && response.status !== 202) {
         setMessage(payload?.error?.message ?? "The final payment could not be started.");
       } else if (payload?.status === "requires_action" && payload.actionUrl) {
         setActionUrl(payload.actionUrl);
-        setMessage("Razorpay needs one final bank verification before the payment can finish.");
+        setMessage(payload.message ?? "Cashfree needs one final bank verification before the payment can finish.");
       } else if (payload?.status === "charged") {
         setMessage("Payment confirmed. Zoosh is distributing the amount to the group.");
+        window.setTimeout(() => router.replace(returnPath), 700);
       } else if (payload?.status === "declined") {
-        setMessage("Razorpay declined the payment.");
+        setMessage(payload.message ?? "Cashfree declined the payment.");
       } else {
-        setMessage("Payment is being confirmed by Razorpay.");
+        setMessage(payload?.message ?? "Payment is being confirmed by Cashfree.");
+        if (attempt < 20) {
+          await new Promise((resolve) => window.setTimeout(resolve, 3000));
+          return finishCharge(attempt + 1);
+        }
+        setMessage("Cashfree is still confirming this payment. Return to the outing and refresh shortly.");
       }
-    }).catch(() => {
+    }
+
+    void finishCharge().catch(() => {
       if (!cancelled) setMessage("The final payment could not be started. You can refresh and try again.");
     });
 
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [returnPath, router, sessionId]);
 
   return (
     <div className="mt-6 flex items-start gap-3 text-sm font-semibold text-[color:var(--accent-light)]">

@@ -24,6 +24,9 @@ type PravaPaymentResult = {
       dynamic_cvv?: string | null;
       expiry_month?: string | null;
       expiry_year?: string | null;
+      cryptogram?: string | null;
+      token_type?: string | null;
+      token_reference_id?: string | null;
     }>;
   }>;
 };
@@ -34,6 +37,9 @@ export type PravaCredential = {
   dynamicCvv: string;
   expiryMonth: string;
   expiryYear: string;
+  cryptogram?: string | null;
+  tokenType?: string | null;
+  tokenReferenceId?: string | null;
 };
 
 function getPravaConfig() {
@@ -123,6 +129,7 @@ export async function createPravaSettlementSession(input: {
   subgroupId: string;
   subgroupName: string;
   callbackUrl?: string;
+  merchantUrl?: string;
 }) {
   const response = await pravaRequest<PravaSession>("/v1/sessions", {
     method: "POST",
@@ -139,7 +146,7 @@ export async function createPravaSettlementSession(input: {
         {
           merchant_details: {
             name: "Zoosh settlement",
-            url: input.callbackUrl ? new URL(input.callbackUrl).origin : "https://zoosh-pay.vercel.app",
+            url: input.merchantUrl ?? (input.callbackUrl ? new URL(input.callbackUrl).origin : "https://zoosh-pay.vercel.app"),
             country_code_iso2: "IN",
             category: "Group expense settlement",
           },
@@ -183,5 +190,8 @@ export function extractPravaCredential(result: PravaPaymentResult): PravaCredent
     dynamicCvv: lineItem.dynamic_cvv,
     expiryMonth: lineItem.expiry_month,
     expiryYear: lineItem.expiry_year,
+    cryptogram: lineItem.cryptogram ?? null,
+    tokenType: lineItem.token_type ?? null,
+    tokenReferenceId: lineItem.token_reference_id ?? null,
   };
 }
