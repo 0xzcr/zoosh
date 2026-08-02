@@ -9,6 +9,15 @@ import { Button } from "@/components/ui/button";
 function normalizeInviteInput(input: string) {
   const trimmed = input.trim();
 
+  const pathMatch = trimmed.match(/^\/?join\/([^/]+)\/?$/i);
+  if (pathMatch?.[1]) {
+    try {
+      return decodeURIComponent(pathMatch[1]).replace(/\s+/g, "").toLowerCase();
+    } catch {
+      return pathMatch[1].replace(/\s+/g, "").toLowerCase();
+    }
+  }
+
   try {
     const url = new URL(trimmed);
     const match = url.pathname.match(/\/join\/([^/]+)\/?$/i);

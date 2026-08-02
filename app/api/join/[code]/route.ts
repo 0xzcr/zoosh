@@ -11,6 +11,11 @@ function normalizeInviteCode(input: string) {
     // Keep the original value when the route segment is malformed.
   }
 
+  const pathMatch = decoded.match(/^\/?join\/([^/]+)\/?$/i);
+  if (pathMatch?.[1]) {
+    decoded = pathMatch[1];
+  }
+
   try {
     const url = new URL(decoded);
     const match = url.pathname.match(/\/join\/([^/]+)\/?$/i);

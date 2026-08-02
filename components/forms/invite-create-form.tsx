@@ -11,6 +11,7 @@ type InviteCreateFormProps = {
 
 export function InviteCreateForm({ groupId }: InviteCreateFormProps) {
   const [invitePath, setInvitePath] = useState<string | null>(null);
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -35,7 +36,11 @@ export function InviteCreateForm({ groupId }: InviteCreateFormProps) {
         const nextPath = typeof payload === "object" && payload && "invitePath" in payload
           ? (payload as { invitePath?: string }).invitePath
           : null;
+        const nextCode = typeof payload === "object" && payload && "invite" in payload
+          ? (payload as { invite?: { code?: string } }).invite?.code
+          : null;
         setInvitePath(nextPath ?? null);
+        setInviteCode(nextCode ?? null);
       })();
     });
   }
@@ -60,10 +65,11 @@ export function InviteCreateForm({ groupId }: InviteCreateFormProps) {
           Copy link
         </Button>
       </div>
-      {invitePath ? (
-        <p className="mt-3 break-all rounded-2xl bg-[color:var(--surface-strong)] px-3 py-2 text-xs text-[color:var(--foreground)]">
-          {invitePath}
-        </p>
+      {inviteCode ? (
+        <div className="mt-3 rounded-2xl bg-[color:var(--surface-strong)] px-3 py-2 text-xs text-[color:var(--foreground)]">
+          <span className="block text-[color:var(--muted)]">Invite code</span>
+          <span className="mt-1 block break-all font-semibold tracking-[0.12em]">{inviteCode}</span>
+        </div>
       ) : null}
       {error ? <p className="mt-2 text-sm text-[color:var(--accent)]" role="alert">{error}</p> : null}
     </section>
