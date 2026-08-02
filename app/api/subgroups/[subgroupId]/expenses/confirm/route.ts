@@ -10,7 +10,7 @@ const bodySchema = z.object({
   payer_id: z.string().uuid(),
   total_amount_paise: z.number().int().positive(),
   description: z.string().trim().min(1).max(500),
-  split_type: z.enum(["equal", "itemized", "custom"]),
+  split_type: z.literal("equal"),
   participant_ids: z.array(z.string().uuid()).min(1),
   source: z.enum(["text", "voice", "receipt"]).default("text"),
   large_expense_acknowledged: z.boolean().default(false),

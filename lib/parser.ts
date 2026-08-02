@@ -25,7 +25,11 @@ export async function parseExpenseText({ text, payerId, payerLabel, subgroupName
     throw new Error("OPENAI_API_KEY is required to parse expenses.");
   }
 
-  const model = process.env.OPENAI_EXPENSE_MODEL ?? "gpt-5.6-luna";
+  const configuredModel = process.env.OPENAI_EXPENSE_MODEL?.trim();
+  // Keep the old placeholder from breaking environments that have not been updated yet.
+  const model = configuredModel && configuredModel !== "gpt-5.6-luna"
+    ? configuredModel
+    : "gpt-4.1-mini";
   const toolName = "extract_expense";
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -95,6 +99,7 @@ export async function parseExpenseText({ text, payerId, payerLabel, subgroupName
             "If the text does not specify participants clearly, default participant_ids to every current subgroup member.",
             "Treat payer_id as the sender unless the text clearly says otherwise.",
             "The payer is always part of the split preview.",
+            "Treat ordinary currency amounts as rupees unless the text explicitly says paise, and return integer paise.",
           ].join(" "),
         },
         {
@@ -114,7 +119,15 @@ export async function parseExpenseText({ text, payerId, payerLabel, subgroupName
   });
 
   if (!response.ok) {
-    throw new Error(`OpenAI parser request failed with status ${response.status}.`);
+    const errorPayload = await response.json().catch(() => null) as {
+      error?: { message?: string };
+    } | null;
+    const providerMessage = errorPayload?.error?.message;
+    throw new Error(
+      providerMessage
+        ? `OpenAI parser request failed: ${providerMessage}`
+        : `OpenAI parser request failed with status ${response.status}.`,
+    );
   }
 
   const payload: unknown = await response.json();

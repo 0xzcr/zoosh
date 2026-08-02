@@ -211,7 +211,7 @@ export default async function OutingPage({ params }: { params: Promise<{ groupId
         </div>
 
         <div className="space-y-6">
-          <BalanceSheet members={memberLabels} balances={balanceRows} currency={subgroup.currency} />
+          <BalanceSheet members={memberLabels} balances={balanceRows} currency={subgroup.currency} hideZeroBalances={subgroup.status !== "active"} />
 
           <section className="border-y border-[color:var(--line)] py-6 sm:py-8">
             <div className="flex items-center gap-2">

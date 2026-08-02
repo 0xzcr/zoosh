@@ -16,10 +16,14 @@ type BalanceSheetProps = {
   members: BalanceMember[];
   balances: BalanceRow[];
   currency: string;
+  hideZeroBalances?: boolean;
 };
 
-export function BalanceSheet({ members, balances, currency }: BalanceSheetProps) {
+export function BalanceSheet({ members, balances, currency, hideZeroBalances = false }: BalanceSheetProps) {
   const balanceByUserId = new Map(balances.map((balance) => [balance.user_id, balance.net_balance_paise] as const));
+  const visibleMembers = hideZeroBalances
+    ? members.filter((member) => (balanceByUserId.get(member.user_id) ?? 0) !== 0)
+    : members;
 
   return (
     <section className="section-frame rounded-[1.75rem] p-6 sm:p-8">
@@ -28,13 +32,13 @@ export function BalanceSheet({ members, balances, currency }: BalanceSheetProps)
         <p className="eyebrow">Balances</p>
       </div>
       <h2 className="mt-3 font-[family-name:var(--font-display)] text-3xl tracking-[-0.04em]">
-        {members.length} {members.length === 1 ? "person" : "people"} in this outing
+        {visibleMembers.length} {visibleMembers.length === 1 ? "person" : "people"} {hideZeroBalances ? "still to settle" : "in this outing"}
       </h2>
       <p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">
         Balances reflect confirmed expenses and remain unchanged until a real settlement is completed.
       </p>
       <ul className="mt-5 space-y-3">
-        {members.map((member) => {
+        {visibleMembers.map((member) => {
           const balance = balanceByUserId.get(member.user_id) ?? 0;
           const isPositive = balance > 0;
           const isNegative = balance < 0;
@@ -55,6 +59,9 @@ export function BalanceSheet({ members, balances, currency }: BalanceSheetProps)
           );
         })}
       </ul>
+      {hideZeroBalances && visibleMembers.length === 0 ? (
+        <p className="mt-5 rounded-2xl bg-[color:var(--surface-strong)] px-4 py-3 text-sm text-[color:var(--muted)]">Everyone is balanced. No payment is needed.</p>
+      ) : null}
     </section>
   );
 }

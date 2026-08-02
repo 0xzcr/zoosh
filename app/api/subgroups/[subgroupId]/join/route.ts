@@ -76,6 +76,16 @@ export async function POST(_request: Request, { params }: { params: Promise<{ su
   });
 
   if (error) {
+    if (error.code === "23505") {
+      return NextResponse.json({
+        joined: true,
+        alreadyJoined: true,
+        subgroup: {
+          id: subgroupId,
+          friend_group_id: subgroup.friend_group_id,
+        },
+      });
+    }
     return apiError("VALIDATION_FAILED", error.message, 400);
   }
 

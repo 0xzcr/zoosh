@@ -86,3 +86,5 @@ Desktop.ini
 *.crt
 *.har
 *.trace
+.vercel
+.env*

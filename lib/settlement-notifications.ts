@@ -18,8 +18,24 @@ export async function notifySettlementSession(input: {
     .maybeSingle();
   if (sessionError || !session) throw new Error("Settlement session not found.");
 
-  const { data: existing } = await admin.from("reminders").select("id").eq("settlement_session_id", input.sessionId).eq("kind", "initial").maybeSingle();
-  if (existing) return { skipped: true, linqMessageId: null, emailMessageId: null };
+  const { data: reminderClaim, error: reminderClaimError } = await admin
+    .from("reminders")
+    .insert({
+      settlement_session_id: input.sessionId,
+      sent_by: input.sentBy,
+      kind: "initial",
+      delivery_status: "pending",
+    })
+    .select("id")
+    .maybeSingle();
+
+  if (reminderClaimError?.code === "23505") {
+    return { skipped: true, linqMessageId: null, emailMessageId: null };
+  }
+
+  if (reminderClaimError || !reminderClaim) {
+    throw new Error("Could not claim the settlement notification.");
+  }
 
   const [{ data: contact }, { data: subgroup }, { data: authUser }] = await Promise.all([
     admin.from("notification_contacts").select("phone_e164").eq("user_id", session.debtor_id).maybeSingle(),
@@ -27,7 +43,10 @@ export async function notifySettlementSession(input: {
     admin.auth.admin.getUserById(session.debtor_id),
   ]);
   const email = authUser?.user?.email;
-  if (!email) throw new Error("The debtor needs an email address before settlement can be notified.");
+  if (!email) {
+    await admin.from("reminders").update({ delivery_status: "failed" }).eq("id", reminderClaim.id);
+    throw new Error("The debtor needs an email address before settlement can be notified.");
+  }
 
   const paymentUrl = `${input.appUrl.replace(/\/$/, "")}/settlements/${session.id}`;
   const amountLabel = formatCurrency(session.total_amount_paise, subgroup?.currency ?? "INR");
@@ -55,14 +74,11 @@ export async function notifySettlementSession(input: {
   }
 
   const deliveryStatus = linqSucceeded && emailSucceeded ? "sent" : linqSucceeded || emailSucceeded ? "partial" : "failed";
-  await admin.from("reminders").insert({
-    settlement_session_id: session.id,
-    sent_by: input.sentBy,
-    kind: "initial",
+  await admin.from("reminders").update({
     linq_message_id: linqMessageId,
     email_message_id: emailMessageId,
     delivery_status: deliveryStatus,
-  });
+  }).eq("id", reminderClaim.id);
 
   return { skipped: false, linqMessageId, emailMessageId, deliveryStatus };
 }

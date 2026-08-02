@@ -135,6 +135,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ sub
     return NextResponse.json({ clarification_needed: parsedExpense.clarification_needed });
   }
 
+  if (parsedExpense.split_type && parsedExpense.split_type !== "equal") {
+    return NextResponse.json({
+      clarification_needed: "Only equal splits are supported right now. Choose the people included in the expense and I will divide it fairly.",
+    });
+  }
+
   const totalAmountPaise = parsedExpense.total_amount_paise;
   if (typeof totalAmountPaise !== "number" || !Number.isInteger(totalAmountPaise) || totalAmountPaise <= 0) {
     return apiError("EXPENSE_INVALID_AMOUNT", "Enter a positive amount before continuing.", 400);

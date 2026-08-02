@@ -17,7 +17,7 @@ export type ExpenseDraft = {
   payer_id: string;
   total_amount_paise: number;
   description: string;
-  split_type: "equal" | "itemized" | "custom";
+  split_type: "equal";
   participant_ids: string[];
 };
 
@@ -50,7 +50,6 @@ export function ExpenseConfirmationCard({
   const router = useRouter();
   const [totalAmountPaise, setTotalAmountPaise] = useState(String(draft.total_amount_paise));
   const [description, setDescription] = useState(draft.description);
-  const [splitType, setSplitType] = useState(draft.split_type);
   const [participantIds, setParticipantIds] = useState<string[]>(draft.participant_ids.length > 0 ? draft.participant_ids : members.map((member) => member.user_id));
   const [acknowledgedLargeAmount, setAcknowledgedLargeAmount] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -119,7 +118,7 @@ export function ExpenseConfirmationCard({
             payer_id: draft.payer_id,
             total_amount_paise: parsedAmount,
             description: description.trim(),
-            split_type: splitType,
+            split_type: "equal",
             participant_ids: normalizedParticipantIds,
             source: "text",
             large_expense_acknowledged: acknowledgedLargeAmount,
@@ -192,19 +191,10 @@ export function ExpenseConfirmationCard({
         </label>
       </div>
 
-      <label className="mt-4 block" htmlFor={`expense-split-${subgroupId}`}>
-        <span className="text-sm font-semibold text-[color:var(--foreground)]">Split type</span>
-        <select
-          id={`expense-split-${subgroupId}`}
-          value={splitType}
-          onChange={(event) => setSplitType(event.target.value as ExpenseDraft["split_type"])}
-          className="mt-2 w-full rounded-2xl border border-[color:var(--line)] bg-[color:var(--surface-strong)] px-4 py-3 outline-none transition focus:border-[color:var(--accent)] focus:ring-2 focus:ring-[color:var(--accent-soft)]"
-        >
-          <option value="equal">Equal</option>
-          <option value="itemized">Itemized</option>
-          <option value="custom">Custom</option>
-        </select>
-      </label>
+      <div className="mt-4 rounded-2xl border border-[color:var(--line)] bg-[color:var(--surface-strong)] px-4 py-3 text-sm">
+        <p className="font-semibold text-[color:var(--foreground)]">Equal split</p>
+        <p className="mt-1 text-[color:var(--muted)]">Choose who shared the expense. The total is divided equally, with any rounding remainder staying with the payer.</p>
+      </div>
 
       <fieldset className="mt-5 rounded-3xl border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-4">
         <legend className="px-2 text-sm font-semibold text-[color:var(--foreground)]">Participants</legend>
