@@ -1,54 +1,39 @@
 # Zoosh
 
-Group expenses in, one tap out. Zoosh uses Supabase for authentication and data, Prava for passkey-protected payment authorization, Linq and email for settlement notifications, and Razorpay Route for recipient payouts.
+Zoosh is a group-expense app for friends. Members create groups and outings, log shared expenses, review balances, and settle the final amounts through one net payment per debtor. Supabase handles authentication and data, Prava handles passkey-protected payment authorization, Linq and email deliver settlement notifications, and Razorpay is used for recipient payouts.
 
-## Local Development
+## Project Structure
 
-1. Install dependencies with `npm ci`.
-2. Copy `.env.example` to `.env.local` and add the required values.
-3. Start the app with `npm run dev`.
+```text
+app/                 Next.js pages, layouts, API routes, and auth callbacks
+app/(app)/            Protected application pages
+app/(auth)/           Login and signup pages
+app/api/              Server-side application endpoints
+components/           Reusable UI, navigation, forms, and payment components
+constants/            Shared application constants and auth helpers
+lib/                  Server clients, ledger logic, provider integrations, and utilities
+public/               Public files such as the service worker and static assets
+supabase/migrations/  Ordered database schema, RLS, functions, and policy changes
+tests/                Automated ledger and application tests
+```
 
-The production checks are:
+## Key Areas
+
+- `app/(app)/groups/`: groups, outings, expenses, balances, and settlement screens.
+- `app/api/`: authenticated server routes for groups, outings, expenses, settlements, and webhooks.
+- `components/forms/`: interactive forms and actions used throughout the app.
+- `lib/ledger.ts`: client-side ledger and net-settlement calculations used by tests and UI logic.
+- `lib/supabase/`: browser, server, admin, and session-refresh Supabase clients.
+- `lib/prava.ts`: server-side Prava session creation, result polling, credential extraction, and status reporting.
+- `lib/razorpay.ts`: Razorpay transfer requests and webhook verification.
+- `lib/linq.ts`: Linq notifications and webhook verification.
+- `supabase/migrations/`: the source of truth for the database schema and security policies.
+
+## Common Commands
 
 ```bash
+npm run dev
 npm run lint
 npm test
 npm run build
 ```
-
-## Vercel Deployment
-
-Vercel should detect this as a Next.js application automatically. Use Node.js `22.x` and the default build command `npm run build`.
-
-Set these variables in the Vercel project for the target environment:
-
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `OPENAI_API_KEY`
-- `OPENAI_EXPENSE_MODEL`
-- `APP_URL` using the stable HTTPS deployment or custom domain
-- `SETTLEMENT_WORKER_TOKEN`
-- Prava variables from `.env.example`
-- Razorpay variables from `.env.example`
-- Linq variables from `.env.example`
-- Resend variables from `.env.example`
-
-Never commit `.env`, `.env.local`, service-role keys, provider secret keys, or worker tokens. `.gitignore` excludes local secrets and build output.
-
-After the Supabase project is linked, apply the migrations:
-
-```bash
-supabase db push --linked
-```
-
-Configure provider callbacks against the deployed HTTPS domain:
-
-- Razorpay webhook: `/api/webhooks/razorpay`
-- Linq webhook: `/api/webhooks/linq`
-
-The Prava publishable key and backend URL must match the secret key environment. Add the stable deployment domain to Prava’s allowed origins before testing passkeys.
-
-## Settlement Readiness
-
-Zoosh prepares one net payment session per debtor and creates creditor payout records. The Prava session, secure iframe, credential polling, provider outcome reporting, webhook verification, and Razorpay transfer code are present. A live settlement requires a compatible processor to charge the Prava-generated one-time credential and return the captured Razorpay payment ID to the protected charge-confirmation route.

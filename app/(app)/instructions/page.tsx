@@ -92,10 +92,11 @@ const interactions = [
   {
     actor: "08 / Approve personally",
     title: "Approve and complete settlement",
-    description: "The app prepares the request, but the person whose money moves makes the final approval.",
+    description: "The app prepares the request, while Prava protects the final approval by the person whose money moves.",
     details: [
       "Each debtor sees the exact total and the creditor breakdown before payment.",
-      "A live passkey approval is required. Opening a notification or tapping a button is not payment approval.",
+      "Zoosh opens a Prava payment session for the debtor, and a live passkey approval is required.",
+      "Opening a notification or tapping a button is not payment approval.",
       "A balance becomes settled only after the payment succeeds and each corresponding payout is confirmed.",
     ],
     icon: CheckCircle2,
@@ -103,9 +104,9 @@ const interactions = [
   {
     actor: "09 / Stay informed",
     title: "Receive requests and reminders",
-    description: "Settlement requests can reach people through messaging and email, without turning replies into payment actions.",
+    description: "Linq helps deliver settlement requests and reminders, with email available as a fallback.",
     details: [
-      "A debtor receives one request for their total, even when several friends are owed.",
+      "A debtor receives one Linq request for their total, even when several friends are owed.",
       "Email remains a fallback for every settlement request.",
       "Reminders are shared at the settlement-session level and rate-limited to prevent spam.",
     ],

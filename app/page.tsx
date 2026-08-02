@@ -3,7 +3,7 @@ import { ArrowUpRight, Check, ShieldCheck, Sparkles } from "lucide-react";
 
 import { TopNav } from "@/components/top-nav";
 
-const promises = ["No more pending Udhari", "Turn a group balance into just one payment", "Automate all debts with Zoosh"];
+const promises = ["No more pending Udhari", "Turn a group balance into one clear request", "Approve once with Prava, then let Zoosh coordinate the rest"];
 
 export default function HomePage() {
   return (
@@ -13,7 +13,7 @@ export default function HomePage() {
         <div>
           <p className="eyebrow text-[color:var(--accent-deep)]">Group money, settled with care</p>
           <h1 className="mt-5 max-w-4xl font-[family-name:var(--font-display)] text-6xl leading-[.9] tracking-[-0.07em] text-[color:var(--foreground)] sm:text-7xl lg:text-[6.75rem]">Friends. Bills. Sorted.</h1>
-          <p className="mt-7 max-w-xl text-lg leading-8 text-[color:var(--muted)]">Zoosh keeps group spending clear while plans are happening, then gives each person a simple, deliberate way to settle when the outing ends.</p>
+          <p className="mt-7 max-w-xl text-lg leading-8 text-[color:var(--muted)]">Zoosh keeps group spending clear while plans are happening, then turns the final balance into one deliberate payment request. Prava protects the approval, while Linq helps it reach the right person.</p>
           <div className="mt-9 flex flex-wrap gap-3">
             <Link
               href="/login"
@@ -37,10 +37,31 @@ export default function HomePage() {
       <section className="border-y border-[color:var(--line)] bg-[color:var(--surface)]">
         <div className="mx-auto grid w-full max-w-6xl gap-8 px-5 py-10 sm:grid-cols-3 sm:px-8">
           <div><p className="eyebrow">One source of truth</p><p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">Expenses, participants, and settlement status stay scoped to the outing that created them.</p></div>
-          <div><p className="eyebrow">No silent charges</p><p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">Every settlement requires the payer&apos;s deliberate passkey approval for the exact amount.</p></div>
-          <div><ShieldCheck className="size-5 text-[color:var(--accent)]" aria-hidden="true" /><p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">Card details are collected by the payment provider, never entered into Zoosh.</p></div>
+          <div><p className="eyebrow">One clear request</p><p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">Zoosh nets the group balance so each debtor sees one total with the creditor breakdown.</p></div>
+          <div><ShieldCheck className="size-5 text-[color:var(--accent)]" aria-hidden="true" /><p className="mt-3 text-sm leading-6 text-[color:var(--muted)]">Prava handles deliberate approval for the exact amount. Zoosh never asks for card details.</p></div>
         </div>
       </section>
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2 px-5 py-6 text-xs text-[color:var(--muted)] sm:px-8">
+        <span>Payments by</span>
+        <a
+          href="https://www.prava.space/"
+          target="_blank"
+          rel="noreferrer"
+          className="font-semibold text-[color:var(--accent-light)] transition-colors hover:text-[color:var(--foreground)]"
+        >
+          Prava
+        </a>
+        <span aria-hidden="true">/</span>
+        <span>Messaging by</span>
+        <a
+          href="https://linqapp.com/"
+          target="_blank"
+          rel="noreferrer"
+          className="font-semibold text-[color:var(--accent-light)] transition-colors hover:text-[color:var(--foreground)]"
+        >
+          Linq
+        </a>
+      </div>
     </main>
   );
 }
