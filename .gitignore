@@ -1,0 +1,88 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+.envrc
+.direnv/
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Next.js and build output
+.next/
+out/
+build/
+dist/
+.vercel/
+.turbo/
+*.tsbuildinfo
+
+# Tool caches
+.cache/
+.parcel-cache/
+.eslintcache
+.npm/
+.yarn/cache/
+.yarn/install-state.gz
+.pnpm-store/
+
+# Test and coverage output
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+artifacts/
+
+# Supabase local state and generated runtime files
+.supabase/
+supabase/.temp/
+supabase/.branches/
+
+# Logs and diagnostics
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Temporary files and local exports
+.tmp-*
+tmp/
+temp/
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Operating system files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Desktop.ini
+
+# Editor and local workspace files
+.idea/
+.vscode/
+.cursor/
+.history/
+*.code-workspace
+
+# Local certificates and browser exports
+*.mobileprovision
+*.cer
+*.crt
+*.har
+*.trace
