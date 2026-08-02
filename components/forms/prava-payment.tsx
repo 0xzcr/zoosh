@@ -15,11 +15,26 @@ type SessionPayload = {
   iframeUrl: string;
 };
 
+function formatPravaError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return "The secure payment form reported an error.";
+  }
+
+  const candidate = error as { code?: unknown; message?: unknown };
+  const message = typeof candidate.message === "string" && candidate.message.trim()
+    ? candidate.message.trim()
+    : "The secure payment form reported an error.";
+  const code = typeof candidate.code === "string" && candidate.code.trim() ? candidate.code.trim() : null;
+
+  return code ? `${message} (${code})` : message;
+}
+
 export function PravaPayment({ sessionId }: PravaPaymentProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sdkRef = useRef<PravaSDK | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "checking" | "authorized" | "declined" | "error">("loading");
+  const [status, setStatus] = useState<"loading" | "ready" | "checking" | "authorized" | "requires_action" | "declined" | "error">("loading");
   const [message, setMessage] = useState("Preparing your secure approval form...");
+  const [actionUrl, setActionUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,7 +55,11 @@ export function PravaPayment({ sessionId }: PravaPaymentProps) {
         sessionToken: payload.sessionToken,
         iframeUrl: payload.iframeUrl,
         container: containerRef.current,
-        onReady: () => setMessage("The secure approval form is ready."),
+        onReady: () => {
+          const iframe = containerRef.current?.querySelector<HTMLIFrameElement>('iframe[title="Secure Card Entry"]');
+          iframe?.setAttribute("scrolling", "no");
+          setMessage("The secure approval form is ready.");
+        },
         onSuccess: () => {
           if (cancelled) return;
           setStatus("checking");
@@ -50,10 +69,51 @@ export function PravaPayment({ sessionId }: PravaPaymentProps) {
         onError: (error) => {
           if (!cancelled) {
             setStatus("error");
-            setMessage(error.message || "The secure approval form reported an error.");
+            setMessage(formatPravaError(error));
           }
         },
       });
+    }
+
+    async function startRazorpayCharge() {
+      const browser = {
+        javaEnabled: typeof navigator.javaEnabled === "function" ? navigator.javaEnabled() : false,
+        javascriptEnabled: true,
+        timezoneOffset: new Date().getTimezoneOffset(),
+        colorDepth: window.screen.colorDepth,
+        screenWidth: window.screen.width,
+        screenHeight: window.screen.height,
+        language: navigator.language.slice(0, 8),
+        userAgent: navigator.userAgent,
+        referrer: document.referrer,
+      };
+      const response = await fetch(`/api/settlements/${sessionId}/charge`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ browser }),
+      });
+      const payload = (await response.json().catch(() => null)) as { status?: string; paymentId?: string; actionUrl?: string; message?: string; error?: { message?: string } } | null;
+      if (!response.ok && response.status !== 202) {
+        throw new Error(payload?.error?.message ?? "The final payment could not be started.");
+      }
+      if (payload?.status === "requires_action" && payload.actionUrl) {
+        setStatus("requires_action");
+        setActionUrl(payload.actionUrl);
+        setMessage("Razorpay needs one final bank verification before the payment can finish.");
+        return;
+      }
+      if (payload?.status === "charged") {
+        setStatus("authorized");
+        setMessage("Payment confirmed. Zoosh is distributing the amount to the group.");
+        return;
+      }
+      if (payload?.status === "declined") {
+        setStatus("declined");
+        setMessage("Razorpay declined the payment.");
+        return;
+      }
+      setStatus("authorized");
+      setMessage(payload?.message ?? "Payment is being confirmed by Razorpay.");
     }
 
     async function checkResult() {
@@ -61,8 +121,7 @@ export function PravaPayment({ sessionId }: PravaPaymentProps) {
         const response = await fetch(`/api/settlements/${sessionId}/result`, { method: "POST" });
         const payload = (await response.json().catch(() => null)) as { status?: string; message?: string; error?: { message?: string } } | null;
         if (payload?.status === "authorized") {
-          setStatus("authorized");
-          setMessage(payload.message ?? "Payment authorization received.");
+          await startRazorpayCharge();
           return;
         }
         if (payload?.status === "declined") {
@@ -81,7 +140,7 @@ export function PravaPayment({ sessionId }: PravaPaymentProps) {
     void start().catch((error: unknown) => {
       if (!cancelled) {
         setStatus("error");
-        setMessage(error instanceof Error ? error.message : "The payment form could not be started.");
+        setMessage(formatPravaError(error));
       }
     });
 
@@ -93,13 +152,23 @@ export function PravaPayment({ sessionId }: PravaPaymentProps) {
   }, [sessionId]);
 
   return (
-    <div className="mt-6 space-y-4">
-      <div className="flex items-start gap-3 rounded-2xl border border-[color:var(--line)] bg-[color:var(--surface-strong)] p-4 text-sm text-[color:var(--muted)]">
+    <section className="prava-payment-box mt-6 overflow-hidden rounded-[1.25rem] border border-[color:var(--line)] bg-[color:var(--surface-strong)]">
+      <div className="flex items-start gap-3 p-4 text-sm text-[color:var(--muted)]">
         <ShieldCheck className="mt-0.5 size-5 shrink-0 text-[color:var(--accent)]" aria-hidden="true" />
         <p>{message}</p>
       </div>
-      {status === "loading" || status === "checking" ? <LoaderCircle className="size-5 animate-spin text-[color:var(--accent)]" aria-label="Loading payment form" /> : null}
-      <div ref={containerRef} className="min-h-48 overflow-hidden rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)]" />
-    </div>
+      {status === "loading" || status === "checking" ? (
+        <div className="flex items-center gap-2 border-t border-[color:var(--line)] px-4 py-3 text-sm text-[color:var(--muted)]">
+          <LoaderCircle className="size-4 animate-spin text-[color:var(--accent)]" aria-hidden="true" />
+          Loading secure payment form
+        </div>
+      ) : null}
+      {status === "requires_action" && actionUrl ? (
+        <div className="border-t border-[color:var(--line)] px-4 py-4 text-sm text-[color:var(--muted)]">
+          <a href={actionUrl} className="font-semibold text-[color:var(--accent-light)] underline underline-offset-4">Continue bank verification</a>
+        </div>
+      ) : null}
+      <div ref={containerRef} className="prava-embed-box h-[min(44rem,calc(100svh-13rem))] min-h-[34rem] overflow-hidden border-t border-[color:var(--line)] bg-[color:var(--paper)]" />
+    </section>
   );
 }

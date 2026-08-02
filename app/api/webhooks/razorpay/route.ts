@@ -34,5 +34,18 @@ export async function POST(request: Request) {
     }
   }
 
+  if (["transfer.failed", "transfer.reversed", "transfer.partially_reversed"].includes(event.event ?? "") && transfer?.id) {
+    const { data: payout } = await admin.from("settlement_payouts").select("id").eq("razorpay_transfer_id", transfer.id).maybeSingle();
+    if (payout) {
+      await admin.from("settlement_payouts").update({
+        status: "pending_payout",
+        razorpay_transfer_id: null,
+        payout_started_at: null,
+        failure_reason: `Razorpay reported ${event.event}.`,
+        updated_at: new Date().toISOString(),
+      }).eq("id", payout.id).in("status", ["pending_payout", "paid"]);
+    }
+  }
+
   return NextResponse.json({ received: true });
 }

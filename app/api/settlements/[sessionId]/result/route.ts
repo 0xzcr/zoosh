@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { apiError } from "@/lib/api-errors";
-import { getPravaPaymentResult, reportPravaStatus } from "@/lib/prava";
+import { extractPravaCredential, getPravaPaymentResult, reportPravaStatus } from "@/lib/prava";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -36,13 +36,19 @@ export async function POST(_request: Request, { params }: { params: Promise<{ se
       return NextResponse.json({ status: "declined", message: reason }, { status: 409 });
     }
 
-    if (result.status !== "completed") return NextResponse.json({ status: result.status }, { status: 202 });
+    // Prava exposes the one-time checkout credential at awaiting_result. The
+    // provider only moves to completed after our payment processor reports the
+    // outcome back, so waiting for completed here would deadlock the charge.
+    if (result.status !== "awaiting_result") return NextResponse.json({ status: result.status }, { status: 202 });
+    if (!extractPravaCredential(result)) {
+      return NextResponse.json({ status: result.status }, { status: 202 });
+    }
 
     await admin.from("settlement_sessions").update({ status: "approved_awaiting_charge", failure_reason: null, updated_at: new Date().toISOString() }).eq("id", session.id).in("status", ["pending", "approved_awaiting_charge"]);
 
     return NextResponse.json({
       status: "authorized",
-      message: "Prava approved the payment. The final charge and creditor distribution are waiting for the configured payment processor.",
+      message: "Prava approved the payment. Zoosh is now submitting the single charge through Razorpay.",
     }, { status: 202 });
   } catch (error) {
     return apiError("VALIDATION_FAILED", error instanceof Error ? error.message : "The payment result could not be checked.", 503);

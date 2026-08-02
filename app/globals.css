@@ -92,6 +92,18 @@ select {
   backdrop-filter: blur(18px);
 }
 
+.prava-embed-box {
+  overscroll-behavior: none;
+}
+
+.prava-embed-box iframe[title="Secure Card Entry"] {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  border: 0;
+  overflow: hidden;
+}
+
 .section-frame::before {
   display: none;
 }

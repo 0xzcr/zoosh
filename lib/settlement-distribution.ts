@@ -15,16 +15,31 @@ export async function distributeChargedSettlement(sessionId: string) {
 
   const { data: payouts } = await admin
     .from("settlement_payouts")
-    .select("id, creditor_id, amount_paise, status, razorpay_transfer_id, attempts")
+    .select("id, creditor_id, amount_paise, status, razorpay_transfer_id")
     .eq("settlement_session_id", sessionId)
     .eq("status", "pending_payout")
     .order("created_at", { ascending: true });
 
   const results = [];
   for (const payout of payouts ?? []) {
+    if (payout.razorpay_transfer_id) {
+      results.push({ payoutId: payout.id, status: "processing", transferId: payout.razorpay_transfer_id });
+      continue;
+    }
+
+    const { data: claimed, error: claimError } = await admin.rpc("claim_settlement_payout", { p_payout_id: payout.id });
+    if (claimError) {
+      results.push({ payoutId: payout.id, status: "failed" });
+      continue;
+    }
+    if (claimed !== true) {
+      results.push({ payoutId: payout.id, status: "processing" });
+      continue;
+    }
+
     const { data: account } = await admin.from("user_payout_accounts").select("razorpay_account_id, onboarding_complete").eq("user_id", payout.creditor_id).maybeSingle();
     if (!account?.razorpay_account_id || !account.onboarding_complete) {
-      await admin.from("settlement_payouts").update({ failure_reason: "Creditor has not completed Razorpay onboarding.", updated_at: new Date().toISOString() }).eq("id", payout.id).eq("status", "pending_payout");
+      await admin.from("settlement_payouts").update({ payout_started_at: null, failure_reason: "Creditor has not completed Razorpay onboarding.", updated_at: new Date().toISOString() }).eq("id", payout.id).eq("status", "pending_payout");
       results.push({ payoutId: payout.id, status: "blocked" });
       continue;
     }
@@ -36,10 +51,10 @@ export async function distributeChargedSettlement(sessionId: string) {
         amountPaise: payout.amount_paise,
         referenceId: payout.id,
       });
-      const { error } = await admin.from("settlement_payouts").update({ razorpay_transfer_id: transfer.id, attempts: payout.attempts ? payout.attempts + 1 : 1, updated_at: new Date().toISOString(), failure_reason: null }).eq("id", payout.id).eq("status", "pending_payout");
+      const { error } = await admin.from("settlement_payouts").update({ razorpay_transfer_id: transfer.id, payout_started_at: null, updated_at: new Date().toISOString(), failure_reason: null }).eq("id", payout.id).eq("status", "pending_payout");
       results.push({ payoutId: payout.id, status: error ? "failed" : transfer.status ?? "created", transferId: transfer.id });
     } catch (error) {
-      await admin.from("settlement_payouts").update({ attempts: payout.attempts ? payout.attempts + 1 : 1, failure_reason: error instanceof Error ? error.message : "Razorpay transfer failed.", updated_at: new Date().toISOString() }).eq("id", payout.id).eq("status", "pending_payout");
+      await admin.from("settlement_payouts").update({ payout_started_at: null, failure_reason: error instanceof Error ? error.message : "Razorpay transfer failed.", updated_at: new Date().toISOString() }).eq("id", payout.id).eq("status", "pending_payout");
       results.push({ payoutId: payout.id, status: "failed" });
     }
   }

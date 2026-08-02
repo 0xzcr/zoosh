@@ -14,7 +14,7 @@ export function ExpenseVoidButton({ subgroupId, expenseId }: ExpenseVoidButtonPr
   const [isPending, startTransition] = useTransition();
 
   function handleVoid() {
-    const reason = window.prompt("Why are you voiding this expense?", "Correction needed");
+    const reason = window.prompt("Why are you removing this expense?", "Correction needed");
     if (reason === null) {
       return;
     }
@@ -28,7 +28,7 @@ export function ExpenseVoidButton({ subgroupId, expenseId }: ExpenseVoidButtonPr
 
       if (!response.ok) {
         const data = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
-        window.alert(data?.error?.message ?? "This expense could not be voided.");
+        window.alert(data?.error?.message ?? "This expense could not be removed.");
         return;
       }
 
@@ -39,7 +39,7 @@ export function ExpenseVoidButton({ subgroupId, expenseId }: ExpenseVoidButtonPr
   return (
     <Button type="button" variant="secondary" className="min-h-9 px-3 text-xs" onClick={handleVoid} disabled={isPending}>
       {isPending ? <LoaderCircle className="size-3 animate-spin" aria-hidden="true" /> : null}
-      Void expense
+      Remove expense
     </Button>
   );
 }

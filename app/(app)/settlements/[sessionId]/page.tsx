@@ -4,6 +4,7 @@ import { ArrowLeft, Banknote, ShieldCheck } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { PravaPayment } from "@/components/forms/prava-payment";
+import { SettlementCharge } from "@/components/forms/settlement-charge";
 import { formatCurrency } from "@/lib/format-currency";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -71,6 +72,8 @@ export default async function SettlementPage({ params }: { params: Promise<{ ses
           </div>
           {session.status === "charged" ? (
             <div className="mt-6 flex items-center gap-3 text-sm font-semibold text-[color:var(--accent-light)]"><ShieldCheck className="size-5" aria-hidden="true" />Payment already confirmed.</div>
+          ) : session.status === "approved_awaiting_charge" ? (
+            <SettlementCharge sessionId={session.id} />
           ) : (
             <PravaPayment sessionId={session.id} />
           )}

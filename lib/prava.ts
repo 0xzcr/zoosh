@@ -121,6 +121,7 @@ export async function createPravaSettlementSession(input: {
           effective_until_minutes: 15,
         },
       ],
+      integration_type: "embedding",
     }),
   });
 
