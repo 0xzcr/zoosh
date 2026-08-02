@@ -70,6 +70,9 @@ export function PravaPayment({ sessionId }: PravaPaymentProps) {
           if (!cancelled) {
             setStatus("error");
             setMessage(formatPravaError(error));
+            void fetch(`/api/settlements/${sessionId}/prava-session?restart=1`, { method: "POST" }).catch(() => {
+              // The visible provider error remains the useful feedback if a retry reset fails.
+            });
           }
         },
       });

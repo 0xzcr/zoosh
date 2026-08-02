@@ -37,20 +37,45 @@ export type PravaCredential = {
 };
 
 function getPravaConfig() {
-  const secretKey = process.env.PRAVA_SECRET_KEY ?? process.env.MERCHANT_SECRET_KEY;
-  const backendUrl = process.env.PRAVA_BACKEND_URL ?? process.env.NEXT_PUBLIC_BACKEND_URL ?? process.env.BACKEND_URL ?? (secretKey?.startsWith("sk_live_") ? "https://api.prava.space" : "https://sandbox.api.prava.space");
+  const secretKey = (process.env.PRAVA_SECRET_KEY ?? process.env.MERCHANT_SECRET_KEY)?.trim();
+  const backendUrl = (process.env.PRAVA_BACKEND_URL ?? process.env.NEXT_PUBLIC_BACKEND_URL ?? process.env.BACKEND_URL ?? (secretKey?.startsWith("sk_live_") ? "https://api.prava.space" : "https://sandbox.api.prava.space"))?.trim();
 
   if (!secretKey) {
     throw new ProviderConfigurationError("prava", "PRAVA_SECRET_KEY is not configured.");
   }
+  if (!backendUrl) {
+    throw new ProviderConfigurationError("prava", "PRAVA_BACKEND_URL is not configured.");
+  }
 
-  return { secretKey, backendUrl: backendUrl.replace(/\/$/, "") };
+  let parsedBackendUrl: URL;
+  try {
+    parsedBackendUrl = new URL(backendUrl);
+  } catch {
+    throw new ProviderConfigurationError("prava", "PRAVA_BACKEND_URL must be a valid URL.");
+  }
+
+  if (parsedBackendUrl.search || parsedBackendUrl.hash || parsedBackendUrl.pathname !== "/") {
+    throw new ProviderConfigurationError("prava", "PRAVA_BACKEND_URL must contain only the Prava origin, without a path or query string.");
+  }
+
+  const expectedHost = secretKey.startsWith("sk_live_") ? "api.prava.space" : secretKey.startsWith("sk_test_") ? "sandbox.api.prava.space" : null;
+  if (!expectedHost) {
+    throw new ProviderConfigurationError("prava", "PRAVA_SECRET_KEY must start with sk_test_ or sk_live_.");
+  }
+  if (parsedBackendUrl.protocol !== "https:" || parsedBackendUrl.hostname !== expectedHost) {
+    throw new ProviderConfigurationError("prava", `The Prava backend URL must match the ${secretKey.startsWith("sk_live_") ? "live" : "sandbox"} secret key environment.`);
+  }
+
+  return { secretKey, backendUrl: parsedBackendUrl.origin };
 }
 
 function getPravaPublishableKey() {
-  const publishableKey = process.env.NEXT_PUBLIC_PRAVA_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_PUBLISHABLE_KEY;
+  const publishableKey = (process.env.NEXT_PUBLIC_PRAVA_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_PUBLISHABLE_KEY)?.trim();
   if (!publishableKey) {
     throw new ProviderConfigurationError("prava", "NEXT_PUBLIC_PRAVA_PUBLISHABLE_KEY is not configured.");
+  }
+  if (!publishableKey.startsWith("pk_test_") && !publishableKey.startsWith("pk_live_")) {
+    throw new ProviderConfigurationError("prava", "NEXT_PUBLIC_PRAVA_PUBLISHABLE_KEY must start with pk_test_ or pk_live_.");
   }
   return publishableKey;
 }
@@ -80,7 +105,14 @@ function amountInMajorUnits(amountPaise: number) {
 }
 
 export function getPravaClientConfig() {
-  return { publishableKey: getPravaPublishableKey() };
+  const { secretKey } = getPravaConfig();
+  const publishableKey = getPravaPublishableKey();
+  const secretIsLive = secretKey.startsWith("sk_live_");
+  const publishableIsLive = publishableKey.startsWith("pk_live_");
+  if (secretIsLive !== publishableIsLive) {
+    throw new ProviderConfigurationError("prava", "The Prava publishable and secret keys must use the same environment.");
+  }
+  return { publishableKey };
 }
 
 export async function createPravaSettlementSession(input: {
@@ -90,7 +122,7 @@ export async function createPravaSettlementSession(input: {
   amountPaise: number;
   subgroupId: string;
   subgroupName: string;
-  callbackUrl: string;
+  callbackUrl?: string;
 }) {
   const response = await pravaRequest<PravaSession>("/v1/sessions", {
     method: "POST",
@@ -101,13 +133,13 @@ export async function createPravaSettlementSession(input: {
       total_amount: amountInMajorUnits(input.amountPaise),
       currency: "INR",
       external_order_ref: `zoosh-settlement-${input.subgroupId}-${input.userId}`,
-      callback_url: input.callbackUrl,
+      ...(input.callbackUrl ? { callback_url: input.callbackUrl } : {}),
       description: `Zoosh settlement for ${input.subgroupName}`,
       purchase_context: [
         {
           merchant_details: {
             name: "Zoosh settlement",
-            url: new URL(input.callbackUrl).origin,
+            url: input.callbackUrl ? new URL(input.callbackUrl).origin : "https://zoosh-pay.vercel.app",
             country_code_iso2: "IN",
             category: "Group expense settlement",
           },
@@ -121,7 +153,6 @@ export async function createPravaSettlementSession(input: {
           effective_until_minutes: 15,
         },
       ],
-      integration_type: "embedding",
     }),
   });
 

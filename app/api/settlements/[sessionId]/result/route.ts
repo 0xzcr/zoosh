@@ -36,10 +36,11 @@ export async function POST(_request: Request, { params }: { params: Promise<{ se
       return NextResponse.json({ status: "declined", message: reason }, { status: 409 });
     }
 
-    // Prava exposes the one-time checkout credential at awaiting_result. The
-    // provider only moves to completed after our payment processor reports the
-    // outcome back, so waiting for completed here would deadlock the charge.
-    if (result.status !== "awaiting_result") return NextResponse.json({ status: result.status }, { status: 202 });
+    // Depending on the provider state, the credential can be exposed at
+    // awaiting_result before reporting or at completed after reporting.
+    if (result.status !== "awaiting_result" && result.status !== "completed") {
+      return NextResponse.json({ status: result.status }, { status: 202 });
+    }
     if (!extractPravaCredential(result)) {
       return NextResponse.json({ status: result.status }, { status: 202 });
     }

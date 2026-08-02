@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowUpRight, UserPlus, UserRound, UsersRound } from "lucide-react";
+import { ArrowUpRight, Phone, UserPlus, UserRound, UsersRound } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { EmptyState } from "@/components/common/empty-state";
 import { GroupCreateForm } from "@/components/forms/group-create-form";
+import { NotificationContactForm } from "@/components/forms/notification-contact-form";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -32,11 +33,14 @@ export default async function GroupsPage() {
   }
 
   const admin = createSupabaseAdminClient() as any;
-  const { data: membershipsData } = await admin
-    .from("friend_group_members")
-    .select("friend_group_id, joined_at")
-    .eq("user_id", user.id)
-    .order("joined_at", { ascending: false });
+  const [{ data: membershipsData }, { data: contactData }] = await Promise.all([
+    admin
+      .from("friend_group_members")
+      .select("friend_group_id, joined_at")
+      .eq("user_id", user.id)
+      .order("joined_at", { ascending: false }),
+    supabase.from("notification_contacts").select("phone_e164").eq("user_id", user.id).maybeSingle(),
+  ]);
 
   const memberships = (membershipsData ?? []) as FriendGroupMembershipRow[];
   const groupIds = memberships.map((membership) => membership.friend_group_id);
@@ -102,6 +106,20 @@ export default async function GroupsPage() {
       <div className="mt-8">
         <GroupCreateForm />
       </div>
+
+      <section className="mt-8 section-frame rounded-[1.75rem] p-6 sm:p-8">
+        <div className="flex items-start gap-3">
+          <Phone className="mt-1 size-5 text-[color:var(--accent)]" aria-hidden="true" />
+          <div>
+            <p className="eyebrow">Linq notifications</p>
+            <h2 className="mt-3 font-[family-name:var(--font-display)] text-3xl tracking-[-0.04em]">Keep your payment requests close.</h2>
+            <p className="mt-3 max-w-2xl leading-7 text-[color:var(--muted)]">Add a phone number so Zoosh can send your settlement request through Linq. No verification is needed, and you can update it anytime.</p>
+          </div>
+        </div>
+        <div className="mt-5 max-w-xl">
+          <NotificationContactForm initialPhone={contactData?.phone_e164 ?? null} />
+        </div>
+      </section>
 
       <div className="mt-10">
         {groups.length > 0 ? (

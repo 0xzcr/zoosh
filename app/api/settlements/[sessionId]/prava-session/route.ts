@@ -7,6 +7,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function POST(request: Request, { params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
+  const requestUrl = new URL(request.url);
+  const restart = requestUrl.searchParams.get("restart") === "1";
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -24,9 +26,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ ses
   if (session.status === "charged") return apiError("VALIDATION_FAILED", "This settlement has already been paid.", 409);
   if (session.status === "declined" || session.status === "expired") return apiError("VALIDATION_FAILED", "This settlement session is no longer active.", 409);
 
+  if (restart && session.status !== "pending") {
+    return apiError("VALIDATION_FAILED", "This payment session cannot be restarted in its current state.", 409);
+  }
+
+  if (restart && session.prava_session_id) {
+    const { error } = await admin.from("settlement_sessions").update({
+      prava_session_id: null,
+      prava_session_token: null,
+      prava_iframe_url: null,
+      prava_expires_at: null,
+      payment_started_at: null,
+      updated_at: new Date().toISOString(),
+    }).eq("id", session.id).eq("status", "pending");
+    if (error) return apiError("VALIDATION_FAILED", error.message, 409);
+  }
+
   const now = Date.now();
   const expiresAt = session.prava_expires_at ? Date.parse(session.prava_expires_at) : 0;
-  if (session.prava_session_id && session.prava_session_token && session.prava_iframe_url && expiresAt > now) {
+  if (!restart && session.prava_session_id && session.prava_session_token && session.prava_iframe_url && expiresAt > now) {
     return NextResponse.json({
       sessionId: session.prava_session_id,
       sessionToken: session.prava_session_token,
@@ -40,7 +58,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ ses
   if (!user.email || !subgroup) return apiError("VALIDATION_FAILED", "Your account needs an email before payment can start.", 400);
 
   try {
-    const appUrl = process.env.APP_URL ?? new URL(request.url).origin;
+    const configuredAppUrl = process.env.APP_URL?.trim();
+    const appUrl = configuredAppUrl && !configuredAppUrl.includes("your-vercel-domain.example")
+      ? configuredAppUrl.replace(/\/$/, "")
+      : requestUrl.origin;
     const pravaSession = await createPravaSettlementSession({
       userId: user.id,
       email: user.email,
@@ -48,7 +69,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ses
       amountPaise: session.total_amount_paise,
       subgroupId: subgroup.id,
       subgroupName: subgroup.name,
-      callbackUrl: `${appUrl.replace(/\/$/, "")}/settlements/${session.id}`,
+      callbackUrl: appUrl.startsWith("https://") ? `${appUrl}/settlements/${session.id}` : undefined,
     });
 
     await admin.from("settlement_sessions").update({

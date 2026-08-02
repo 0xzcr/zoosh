@@ -71,7 +71,7 @@ async function getPravaCredential(session: ChargeSession) {
   if (result.status === "failed") {
     throw new Error(result.transactions?.[0]?.error?.message ?? "Prava declined the payment authorization.");
   }
-  if (result.status !== "awaiting_result") {
+  if (result.status !== "awaiting_result" && result.status !== "completed") {
     throw new Error("The Prava payment credential is not ready yet.");
   }
   const credential = extractPravaCredential(result);
